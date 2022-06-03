@@ -782,6 +782,16 @@ float find_zero_hermite(int v0, int v1, float val0, float val1,
 	return 0.5f * (sl + sr);
 }
 
+struct isoline_params {
+	const vector<float> val;
+	const vector<float> test_num;
+	const vector<float> test_den;
+	const vector<float> ndotv;
+	bool do_bfcull{false};
+	bool do_hermite{false};
+	bool do_test{false};
+	float fade{0.0f};
+};
 
 // Draw part of a zero-crossing curve on one triangle face, but only if
 // "test_num/test_den" is positive.  v0,v1,v2 are the indices of the 3
@@ -791,18 +801,17 @@ float find_zero_hermite(int v0, int v1, float val0, float val1,
 // opposite sign from val1 and val2 - the following function is the
 // general one that figures out which one actually has the different sign.
 void draw_face_isoline2(int v0, int v1, int v2,
-			const vector<float> &val,
-			const vector<float> &test_num,
-			const vector<float> &test_den,
-			bool do_hermite, bool do_test, float fade)
+			const isoline_params& params)
 {
 	// How far along each edge?
-	float w10 = do_hermite ?
-		find_zero_hermite(v0, v1, val[v0], val[v1],
-				  gradkr(v0), gradkr(v1)) :
-		find_zero_linear(val[v0], val[v1]);
+	auto &&val = params.val;
+	auto &&test_num = params.test_num;
+	auto &&test_den = params.test_den;
+	float w10 = params.do_hermite ? find_zero_hermite(v0, v1, val[v0], val[v1],
+													  gradkr(v0), gradkr(v1))
+								  : find_zero_linear(val[v0], val[v1]);
 	float w01 = 1.0f - w10;
-	float w20 = do_hermite ?
+	float w20 = params.do_hermite ?
 		find_zero_hermite(v0, v2, val[v0], val[v2],
 				  gradkr(v0), gradkr(v2)) :
 		find_zero_linear(val[v0], val[v2]);
@@ -816,7 +825,7 @@ void draw_face_isoline2(int v0, int v1, int v2,
 	float test_den1 = 1.0f, test_den2 = 1.0f;
 	float z1 = 0.0f, z2 = 0.0f;
 	bool valid1 = true;
-	if (do_test) {
+	if (params.do_test) {
 		// Interpolate to find value of test at p1, p2
 		test_num1 = w01 * test_num[v0] + w10 * test_num[v1];
 		test_num2 = w02 * test_num[v0] + w20 * test_num[v2];
@@ -849,7 +858,7 @@ void draw_face_isoline2(int v0, int v1, int v2,
 	int npts = 0;
 	if (valid1) {
 		glColor4f(currcolor[0], currcolor[1], currcolor[2],
-			  test_num1 / (test_den1 * fade + test_num1));
+			  test_num1 / (test_den1 * params.fade + test_num1));
 		glVertex3fv(p1);
 		npts++;
 	}
@@ -857,7 +866,7 @@ void draw_face_isoline2(int v0, int v1, int v2,
 		float num = (1.0f - z1) * test_num1 + z1 * test_num2;
 		float den = (1.0f - z1) * test_den1 + z1 * test_den2;
 		glColor4f(currcolor[0], currcolor[1], currcolor[2],
-			  num / (den * fade + num));
+			  num / (den * params.fade + num));
 		glVertex3fv((1.0f - z1) * p1 + z1 * p2);
 		npts++;
 	}
@@ -865,35 +874,32 @@ void draw_face_isoline2(int v0, int v1, int v2,
 		float num = (1.0f - z2) * test_num1 + z2 * test_num2;
 		float den = (1.0f - z2) * test_den1 + z2 * test_den2;
 		glColor4f(currcolor[0], currcolor[1], currcolor[2],
-			  num / (den * fade + num));
+			  num / (den * params.fade + num));
 		glVertex3fv((1.0f - z2) * p1 + z2 * p2);
 		npts++;
 	}
 	if (npts != 2) {
 		glColor4f(currcolor[0], currcolor[1], currcolor[2],
-			  test_num2 / (test_den2 * fade + test_num2));
+			  test_num2 / (test_den2 * params.fade + test_num2));
 		glVertex3fv(p2);
 	}
 }
 
-
 // See above.  This is the driver function that figures out which of
 // v0, v1, v2 has a different sign from the others.
 void draw_face_isoline(int v0, int v1, int v2,
-		       const vector<float> &val,
-		       const vector<float> &test_num,
-		       const vector<float> &test_den,
-		       const vector<float> &ndotv,
-		       bool do_bfcull, bool do_hermite,
-		       bool do_test, float fade)
+		       const isoline_params& params)
 {
 	// Backface culling
-	if (likely(do_bfcull && ndotv[v0] <= 0.0f &&
-		   ndotv[v1] <= 0.0f && ndotv[v2] <= 0.0f))
+	if (likely(params.do_bfcull && params.ndotv[v0] <= 0.0f &&
+		   params.ndotv[v1] <= 0.0f && params.ndotv[v2] <= 0.0f))
 		return;
 
 	// Quick reject if derivs are negative
-	if (do_test) {
+	auto&& test_num = params.test_num;
+	auto&& test_den = params.test_den;
+	if (params.do_test)
+	{
 		if (test_den.empty()) {
 			if (test_num[v0] <= 0.0f &&
 			    test_num[v1] <= 0.0f &&
@@ -910,34 +916,22 @@ void draw_face_isoline(int v0, int v1, int v2,
 				return;
 		}
 	}
-
+	auto&& val = params.val;
 	// Figure out which val has different sign, and draw
 	if ((val[v0] < 0.0f && val[v1] >= 0.0f && val[v2] >= 0.0f) ||
 	    (val[v0] > 0.0f && val[v1] <= 0.0f && val[v2] <= 0.0f))
-		draw_face_isoline2(v0, v1, v2,
-				   val, test_num, test_den,
-				   do_hermite, do_test, fade);
+		draw_face_isoline2(v0, v1, v2, params);
 	else if ((val[v1] < 0.0f && val[v2] >= 0.0f && val[v0] >= 0.0f) ||
 		 (val[v1] > 0.0f && val[v2] <= 0.0f && val[v0] <= 0.0f))
-		draw_face_isoline2(v1, v2, v0,
-				   val, test_num, test_den,
-				   do_hermite, do_test, fade);
+		draw_face_isoline2(v1, v2, v0, params);
 	else if ((val[v2] < 0.0f && val[v0] >= 0.0f && val[v1] >= 0.0f) ||
 		 (val[v2] > 0.0f && val[v0] <= 0.0f && val[v1] <= 0.0f))
-		draw_face_isoline2(v2, v0, v1,
-				   val, test_num, test_den,
-				   do_hermite, do_test, fade);
+		draw_face_isoline2(v2, v0, v1, params);
 }
-
 
 // Takes a scalar field and renders the zero crossings, but only where
 // test_num/test_den is greater than 0.
-void draw_isolines(const vector<float> &val,
-		   const vector<float> &test_num,
-		   const vector<float> &test_den,
-		   const vector<float> &ndotv,
-		   bool do_bfcull, bool do_hermite,
-		   bool do_test, float fade)
+void draw_isolines(const isoline_params& params)
 {
 	const int *t = &themesh->tstrips[0];
 	const int *stripend = t;
@@ -957,12 +951,11 @@ void draw_isolines(const vector<float> &val,
 		}
 		// Draw a line if, among the values in this triangle,
 		// at least one is positive and one is negative
-		const float &v0 = val[*t], &v1 = val[*(t-1)], &v2 = val[*(t-2)];
+		auto&& val = params.val;
+		const float &v0 = val[*t], &v1 = val[*(t - 1)], &v2 = val[*(t - 2)];
 		if (unlikely((v0 > 0.0f || v1 > 0.0f || v2 > 0.0f) &&
 			     (v0 < 0.0f || v1 < 0.0f || v2 < 0.0f)))
-			draw_face_isoline(*(t-2), *(t-1), *t,
-					  val, test_num, test_den, ndotv,
-					  do_bfcull, do_hermite, do_test, fade);
+			draw_face_isoline(*(t-2), *(t-1), *t, params);
 		t++;
 	}
 }
@@ -1294,10 +1287,11 @@ void draw_silhouette(const vector<float> &ndotv)
 	glDepthMask(GL_FALSE);
 
 	currcolor = vec(0.0, 0.0, 0.0);
+	isoline_params params{.val{ndotv}, .ndotv{ndotv}};
+
 	glLineWidth(6);
 	glBegin(GL_LINES);
-	draw_isolines(ndotv, vector<float>(), vector<float>(), ndotv,
-		      false, false, false, 0.0f);
+	draw_isolines(params);
 	glEnd();
 
 	// Wide lines are gappy, so fill them in
@@ -1306,8 +1300,7 @@ void draw_silhouette(const vector<float> &ndotv)
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glPointSize(6);
 	glBegin(GL_POINTS);
-	draw_isolines(ndotv, vector<float>(), vector<float>(), ndotv,
-		      false, false, false, 0.0f);
+	draw_isolines(params);
 	glEnd();
 
 	glDisable(GL_POINT_SMOOTH);
@@ -1374,8 +1367,8 @@ void draw_isophotes(const vector<float> &ndotv)
 				ndotl[i] -= dt;
 		}
 		glBegin(GL_LINES);
-		draw_isolines(ndotl, vector<float>(), vector<float>(),
-			      ndotv, true, false, false, 0.0f);
+		isoline_params params{.val{ndotl}, .ndotv{ndotv}, .do_bfcull=true};
+		draw_isolines(params);
 		glEnd();
 	}
 
@@ -1393,8 +1386,8 @@ void draw_isophotes(const vector<float> &ndotv)
 		for (int i = 0; i < nv; i++)
 			ndotl[i] += dt;
 		glBegin(GL_LINES);
-		draw_isolines(ndotl, vector<float>(), vector<float>(),
-			      ndotv, true, false, false, 0.0f);
+		isoline_params params{.val{ndotl}, .ndotv{ndotv}, .do_bfcull=true};
+		draw_isolines(params);
 		glEnd();
 	}
 }
@@ -1422,8 +1415,8 @@ void draw_topolines(const vector<float> &ndotv)
 	glColor3f(0.5, 0.5, 0.5);
 	for (int it = 0; it < ntopo; it++) {
 		glBegin(GL_LINES);
-		draw_isolines(depth, vector<float>(), vector<float>(),
-			      ndotv, true, false, false, 0.0f);
+		isoline_params params{.val{depth}, .do_bfcull=true};
+		draw_isolines(params);
 		glEnd();
 		for (int i = 0; i < nv; i++)
 			depth[i] -= 1.0f;
@@ -1449,8 +1442,7 @@ void draw_misc(const vector<float> &ndotv, const vector<float> &DwKr,
 		for (int i = 0; i < nv; i++)
 			K[i] = themesh->curv1[i] * themesh->curv2[i];
 		glBegin(GL_LINES);
-		draw_isolines(K, vector<float>(), vector<float>(), ndotv,
-			      !do_hidden, false, false, 0.0f);
+		draw_isolines({.val{K}, .ndotv{ndotv}, .do_bfcull=!do_hidden});
 		glEnd();
 	}
 	if (draw_H) {
@@ -1458,14 +1450,12 @@ void draw_misc(const vector<float> &ndotv, const vector<float> &DwKr,
 		for (int i = 0; i < nv; i++)
 			H[i] = 0.5f * (themesh->curv1[i] + themesh->curv2[i]);
 		glBegin(GL_LINES);
-		draw_isolines(H, vector<float>(), vector<float>(), ndotv,
-			      !do_hidden, false, false, 0.0f);
+		draw_isolines({.val{H}, .ndotv{ndotv}, .do_bfcull=!do_hidden});
 		glEnd();
 	}
 	if (draw_DwKr) {
 		glBegin(GL_LINES);
-		draw_isolines(DwKr, vector<float>(), vector<float>(), ndotv,
-			      !do_hidden, false, false, 0.0f);
+		draw_isolines({.val{DwKr}, .ndotv{ndotv}, .do_bfcull=!do_hidden});
 		glEnd();
 	}
 }
@@ -1582,8 +1572,8 @@ void draw_mesh()
 			float fade = draw_faded ? 0.03f / sqr(feature_size) : 0.0f;
 			glLineWidth(2.5);
 			glBegin(GL_LINES);
-			draw_isolines(kr, shtest_num, sctest_den, ndotv,
-				      false, use_hermite, test_sh, fade);
+			draw_isolines({kr, shtest_num, sctest_den, ndotv,
+				      false, !!use_hermite, !!test_sh, fade});
 			glEnd();
 		}
 
@@ -1595,8 +1585,8 @@ void draw_mesh()
 				currcolor = vec(0.5, 0.5, 1.0);
 			glLineWidth(1.5);
 			glBegin(GL_LINES);
-			draw_isolines(kr, sctest_num, sctest_den, ndotv,
-				      false, use_hermite, test_sc, fade);
+			draw_isolines({kr, sctest_num, sctest_den, ndotv,
+				      false, !!use_hermite, !!test_sc, fade});
 			glEnd();
 		}
 
@@ -1605,8 +1595,8 @@ void draw_mesh()
 				currcolor = vec(0.4, 0.8, 0.4);
 			glLineWidth(1.5);
 			glBegin(GL_LINES);
-			draw_isolines(ndotv, kr, vector<float>(), ndotv,
-				      false, false, test_c, 0.0f);
+			isoline_params params{.val{ndotv}, .test_num{kr}, .ndotv{ndotv}, .do_test=!!test_c};
+			draw_isolines(params);
 			glEnd();
 		}
 
@@ -1701,8 +1691,8 @@ void draw_mesh()
 		float fade = draw_faded ? 0.03f / sqr(feature_size) : 0.0f;
 		glLineWidth(2.5);
 		glBegin(GL_LINES);
-		draw_isolines(kr, shtest_num, sctest_den, ndotv,
-			      true, use_hermite, test_sh, fade);
+		draw_isolines({kr, shtest_num, sctest_den, ndotv,
+			      true, !!use_hermite, !!test_sh, fade});
 		glEnd();
 		currcolor = vec(0.0, 0.0, 0.0);
         }
@@ -1715,8 +1705,8 @@ void draw_mesh()
 			currcolor = vec(0.6, 0.6, 0.6);
 		glLineWidth(1.5);
 		glBegin(GL_LINES);
-		draw_isolines(kr, sctest_num, sctest_den, ndotv,
-			      true, use_hermite, false, 0.0f);
+		draw_isolines({kr, sctest_num, sctest_den, ndotv,
+			      true, !!use_hermite, false, 0.0f});
 		glEnd();
 		currcolor = vec(0.0, 0.0, 0.0);
 	}
@@ -1728,8 +1718,8 @@ void draw_mesh()
 			currcolor = vec(0.0, 0.0, 0.8);
 		glLineWidth(2.5);
 		glBegin(GL_LINES);
-		draw_isolines(kr, sctest_num, sctest_den, ndotv,
-			      true, use_hermite, true, fade);
+		draw_isolines({kr, sctest_num, sctest_den, ndotv,
+			      true, !!use_hermite, true, fade});
 		glEnd();
 	}
 	if (draw_c && !use_texture) {
@@ -1737,8 +1727,8 @@ void draw_mesh()
 			currcolor = vec(0.0, 0.6, 0.0);
 		glLineWidth(2.5);
 		glBegin(GL_LINES);
-		draw_isolines(ndotv, kr, vector<float>(), ndotv,
-			      false, false, true, 0.0f);
+		draw_isolines({ndotv, kr, vector<float>(), ndotv,
+			      false, false, true, 0.0f});
 		glEnd();
 	}
 	if ((draw_sc || draw_c) && use_texture)
