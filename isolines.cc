@@ -134,7 +134,6 @@ float find_zero_hermite(int v0, int v1, float val0, float val1,
             (valsl > 0.0f && valsbi <= 0.0f))
         {
             sr    = sbi;
-            valsr = valsbi;
         }
         else
         {
