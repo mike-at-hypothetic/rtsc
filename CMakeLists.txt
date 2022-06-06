@@ -1,6 +1,8 @@
  cmake_minimum_required(VERSION 3.22.1)
 
-project(rtsc VERSION 1.6)
+ set(CMAKE_CXX_STANDARD 17)
+ 
+ project(rtsc VERSION 1.6)
 
 list(APPEND CMAKE_MODULE_PATH /usr/local/lib/cmake)
 

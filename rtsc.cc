@@ -26,6 +26,7 @@ Real-time suggestive contours - these days, it also draws many other lines.
 //#include <GL/glext.h>
 #endif
 #include <algorithm>
+#include <string>
 
 // Set to false for hardware that has problems with display lists
 const bool use_dlists = true;
@@ -39,7 +40,7 @@ trimesh::GLCamera camera, camera_alt;
 trimesh::xform    xf, xf_alt;
 float             fov = 0.7f;
 double            alt_projmatrix[16];
-char*             xffilename; // Filename where we look for "home" position
+std::string             xffilename; // Filename where we look for "home" position
 trimesh::point    viewpos;    // Current view position
 
 // Toggles for drawing various lines
@@ -2137,18 +2138,13 @@ int main(int argc, char* argv[])
         if (!strcmp(argv[i - 1], "--"))
             break;
     }
-    const char* filename = argv[i];
+    std::string filename{argv[i]};
 
     glut_mesh = trimesh::TriMesh::read(filename);
     if (!glut_mesh)
         usage(argv[0]);
 
-    xffilename = new char[strlen(filename) + 4];
-    strcpy(xffilename, filename);
-    char* dot = strrchr(xffilename, '.');
-    if (!dot)
-        dot = strrchr(xffilename, 0);
-    strcpy(dot, ".xf");
+    xffilename = filename.substr(0, filename.find_last_of('.')) + ".xf";
 
     glut_mesh->need_tstrips();
     glut_mesh->need_bsphere();
@@ -2159,7 +2155,7 @@ int main(int argc, char* argv[])
     currsmooth = 0.5f * glut_mesh->feature_size();
 
     char windowname[255];
-    sprintf(windowname, "RTSC - %s", filename);
+    sprintf(windowname, "RTSC - %s", filename.c_str());
     int main_win = glutCreateWindow(windowname);
 
     glutDisplayFunc(redraw);
