@@ -36,12 +36,13 @@ const bool use_3dtexc = false;
 // Two cameras: the primary one, and an alternate one to fix the lines
 // and see them from a different direction
 int               dual_vpmode = false, mouse_moves_alt = false;
-trimesh::GLCamera camera, camera_alt;
-trimesh::xform    xf, xf_alt;
+trimesh::GLCamera camera{}, camera_alt{};
+trimesh::xform    xf{}, xf_alt{};
 float             fov = 0.7f;
-double            alt_projmatrix[16];
-std::string             xffilename; // Filename where we look for "home" position
-trimesh::point    viewpos;    // Current view position
+double            alt_projmatrix[16]{};
+std::string             xffilename{}; // Filename where we look for "home" position
+trimesh::point    viewpos{};    // Current view position
+trimesh::TriMesh* glut_mesh = nullptr;
 
 // Toggles for drawing various lines
 int   draw_extsil = 0, draw_c = 1, draw_sc = 1;
@@ -1574,7 +1575,6 @@ void set_subwindow_viewport(bool draw_box = false)
     glViewport(x, y, w, h);
 }
 
-trimesh::TriMesh* glut_mesh;
 // Draw the scene
 void redraw()
 {
