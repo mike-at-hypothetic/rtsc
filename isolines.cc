@@ -133,7 +133,7 @@ float find_zero_hermite(int v0, int v1, float val0, float val1,
         if ((valsl < 0.0f && valsbi >= 0.0f) ||
             (valsl > 0.0f && valsbi <= 0.0f))
         {
-            sr    = sbi;
+            sr = sbi;
         }
         else
         {
@@ -152,10 +152,12 @@ float find_zero_hermite(int v0, int v1, float val0, float val1,
 // to make sure they are positive.  This function assumes that val0 has
 // opposite sign from val1 and val2 - the following function is the
 // general one that figures out which one actually has the different sign.
-void draw_face_isoline2(int v0, int v1, int v2, const isoline_params& params,
-                        trimesh::TriMesh*     themesh,
-                        const trimesh::point& viewpos,
-                        const trimesh::vec&   currcolor)
+void compute_face_isoline2(int v0, int v1, int v2, const isoline_params& params,
+                           trimesh::TriMesh*             themesh,
+                           const trimesh::point&         viewpos,
+                           const trimesh::vec&           currcolor,
+                           std::vector<trimesh::point3>& points,
+                           std::vector<trimesh::vec4>&  colors)
 {
     // How far along each edge?
     auto&& val      = params.val;
@@ -219,42 +221,45 @@ void draw_face_isoline2(int v0, int v1, int v2, const isoline_params& params,
     int npts = 0;
     if (valid1)
     {
-        glColor4f(currcolor[0], currcolor[1], currcolor[2],
-                  test_num1 / (test_den1 * params.fade + test_num1));
-        glVertex3fv(p1);
+        colors.push_back({currcolor[0], currcolor[1], currcolor[2],
+                          test_num1 / (test_den1 * params.fade + test_num1)});
+        points.push_back(p1);
         npts++;
     }
     if (z1)
     {
         float num = (1.0f - z1) * test_num1 + z1 * test_num2;
         float den = (1.0f - z1) * test_den1 + z1 * test_den2;
-        glColor4f(currcolor[0], currcolor[1], currcolor[2],
-                  num / (den * params.fade + num));
-        glVertex3fv((1.0f - z1) * p1 + z1 * p2);
+        colors.push_back({currcolor[0], currcolor[1], currcolor[2],
+                  num / (den * params.fade + num)});
+        points.push_back((1.0f - z1) * p1 + z1 * p2);
         npts++;
     }
     if (z2)
     {
         float num = (1.0f - z2) * test_num1 + z2 * test_num2;
         float den = (1.0f - z2) * test_den1 + z2 * test_den2;
-        glColor4f(currcolor[0], currcolor[1], currcolor[2],
-                  num / (den * params.fade + num));
-        glVertex3fv((1.0f - z2) * p1 + z2 * p2);
+        colors.push_back({currcolor[0], currcolor[1], currcolor[2],
+                  num / (den * params.fade + num)});
+        points.push_back((1.0f - z2) * p1 + z2 * p2);
         npts++;
     }
     if (npts != 2)
     {
-        glColor4f(currcolor[0], currcolor[1], currcolor[2],
-                  test_num2 / (test_den2 * params.fade + test_num2));
-        glVertex3fv(p2);
+        colors.push_back({currcolor[0], currcolor[1], currcolor[2],
+                  test_num2 / (test_den2 * params.fade + test_num2)});
+        points.push_back(p2);
     }
 }
 
 // See above.  This is the driver function that figures out which of
 // v0, v1, v2 has a different sign from the others.
-void draw_face_isoline(int v0, int v1, int v2, const isoline_params& params,                        trimesh::TriMesh*     themesh,
-                        const trimesh::point& viewpos,
-                        const trimesh::vec&   currcolor)
+void compute_face_isoline(int v0, int v1, int v2, const isoline_params& params,
+                          trimesh::TriMesh*             themesh,
+                          const trimesh::point&         viewpos,
+                          const trimesh::vec&           currcolor,
+                          std::vector<trimesh::point3>& points,
+                          std::vector<trimesh::vec4>&  colors)
 {
     // Backface culling
     if (likely(params.do_bfcull && params.ndotv[v0] <= 0.0f &&
@@ -285,26 +290,38 @@ void draw_face_isoline(int v0, int v1, int v2, const isoline_params& params,    
         }
     }
     auto&& val = params.val;
+
     // Figure out which val has different sign, and draw
     if ((val[v0] < 0.0f && val[v1] >= 0.0f && val[v2] >= 0.0f) ||
         (val[v0] > 0.0f && val[v1] <= 0.0f && val[v2] <= 0.0f))
-        draw_face_isoline2(v0, v1, v2, params, themesh, viewpos, currcolor);
+        compute_face_isoline2(v0, v1, v2, params, themesh, viewpos, currcolor,
+                              points, colors);
     else if ((val[v1] < 0.0f && val[v2] >= 0.0f && val[v0] >= 0.0f) ||
              (val[v1] > 0.0f && val[v2] <= 0.0f && val[v0] <= 0.0f))
-        draw_face_isoline2(v1, v2, v0, params, themesh, viewpos, currcolor);
+        compute_face_isoline2(v1, v2, v0, params, themesh, viewpos, currcolor,
+                              points, colors);
     else if ((val[v2] < 0.0f && val[v0] >= 0.0f && val[v1] >= 0.0f) ||
              (val[v2] > 0.0f && val[v0] <= 0.0f && val[v1] <= 0.0f))
-        draw_face_isoline2(v2, v0, v1, params, themesh, viewpos, currcolor);
+        compute_face_isoline2(v2, v0, v1, params, themesh, viewpos, currcolor,
+                              points, colors);
 }
 
 // Takes a scalar field and renders the zero crossings, but only where
 // test_num/test_den is greater than 0.
-void draw_isolines(const isoline_params& params, trimesh::TriMesh* themesh,
-                   const trimesh::point& viewpos, const trimesh::vec& currcolor)
+auto compute_isolines(const isoline_params& params, trimesh::TriMesh* themesh,
+                      const trimesh::point& viewpos,
+                      const trimesh::vec&   currcolor)
 {
+
     const int* t        = &themesh->tstrips[0];
     const int* stripend = t;
     const int* end      = t + themesh->tstrips.size();
+
+    struct
+    {
+        std::vector<trimesh::point3> points{};
+        std::vector<trimesh::vec4>  colors{};
+    } ret;
 
     // Walk through triangle strips
     while (1)
@@ -312,7 +329,7 @@ void draw_isolines(const isoline_params& params, trimesh::TriMesh* themesh,
         if (t >= stripend)
         {
             if (t >= end)
-                return;
+                return ret;
             // New strip: each strip is stored as
             // length followed by indices
             stripend = t + 1 + *t;
@@ -326,7 +343,20 @@ void draw_isolines(const isoline_params& params, trimesh::TriMesh* themesh,
         const float &v0 = val[*t], &v1 = val[*(t - 1)], &v2 = val[*(t - 2)];
         if ((v0 > 0.0f || v1 > 0.0f || v2 > 0.0f) &&
             (v0 < 0.0f || v1 < 0.0f || v2 < 0.0f))
-            draw_face_isoline(*(t - 2), *(t - 1), *t, params, themesh, viewpos, currcolor);
+            compute_face_isoline(*(t - 2), *(t - 1), *t, params, themesh,
+                                 viewpos, currcolor, ret.points, ret.colors);
         t++;
+    }
+}
+
+void draw_isolines(const isoline_params& params, trimesh::TriMesh* themesh,
+                   const trimesh::point& viewpos, const trimesh::vec& currcolor)
+{
+    auto [points, colors] =
+        compute_isolines(params, themesh, viewpos, currcolor);
+    for (auto i = 0; i < points.size(); ++i)
+    {
+        glColor4fv(colors[i].data());
+        glVertex3fv(points[i].data());
     }
 }
