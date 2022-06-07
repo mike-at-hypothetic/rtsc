@@ -29,9 +29,9 @@ Real-time suggestive contours - these days, it also draws many other lines.
 #include <string>
 
 // Set to false for hardware that has problems with display lists
-const bool use_dlists = true;
+constexpr bool use_dlists = true;
 // Set to false for hardware that has problems with supplying 3D texture coords
-const bool use_3dtexc = false;
+constexpr bool use_3dtexc = false;
 
 // Two cameras: the primary one, and an alternate one to fix the lines
 // and see them from a different direction
@@ -420,17 +420,19 @@ void draw_base_mesh(trimesh::TriMesh* mesh)
         trimesh::vec lightdir(&lightdir_matrix[8]);
         if (light_wrt_camera)
             lightdir = rot_only(inv(xf)) * lightdir;
-        float rotamount =
-            180.0f / M_PI * acos(lightdir DOT trimesh::vec(1, 0, 0));
-        trimesh::vec rotaxis = lightdir CROSS trimesh::vec(1, 0, 0);
 
         // Texture matrix: remap from normals to texture coords
         glMatrixMode(GL_TEXTURE);
         glLoadIdentity();
         glTranslatef(0.5, 0.5, 0); // Remap [-0.5 .. 0.5] -> [0 .. 1]
         glScalef(0.496, 0, 0);     // Remap [-1 .. 1] -> (-0.5 .. 0.5)
-        if (use_3dtexc)            // Rotate normals, else see below
+        if constexpr (use_3dtexc)            // Rotate normals, else see below
+        {
+            float rotamount =
+                180.0f / M_PI * acos(lightdir DOT trimesh::vec(1, 0, 0));
+            trimesh::vec rotaxis = lightdir CROSS trimesh::vec(1, 0, 0);
             glRotatef(rotamount, rotaxis[0], rotaxis[1], rotaxis[2]);
+        }
         glMatrixMode(GL_MODELVIEW);
 
         // Bind and enable the texturing
@@ -442,7 +444,7 @@ void draw_base_mesh(trimesh::TriMesh* mesh)
         glEnable(GL_TEXTURE_2D);
 
         // On broken hardware, compute 1D tex coords by hand
-        if (!use_3dtexc)
+        if constexpr (!use_3dtexc)
         {
             ndotl.resize(nv);
             for (int i = 0; i < nv; i++)
