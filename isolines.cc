@@ -5,29 +5,29 @@
 #include <mathutil.h>
 
 // Compute gradient of (kr * sin^2 theta) at vertex i
-static inline trimesh::vec gradkr(int i, trimesh::TriMesh* themesh,
+static inline trimesh::vec gradkr(int i, trimesh::TriMesh* mesh,
                                   const trimesh::point& viewpos)
 {
-    trimesh::vec viewdir      = viewpos - themesh->vertices[i];
+    trimesh::vec viewdir      = viewpos - mesh->vertices[i];
     float        rlen_viewdir = 1.0f / len(viewdir);
     viewdir *= rlen_viewdir;
 
-    float ndotv                        = viewdir DOT themesh->normals[i];
+    float ndotv                        = viewdir DOT mesh->normals[i];
     float                     sintheta = sqrt(1.0f - trimesh::sqr(ndotv));
     float                     csctheta = 1.0f / sintheta;
-    float                     u = (viewdir DOT themesh->pdir1[i]) * csctheta;
-    float                     v = (viewdir DOT themesh->pdir2[i]) * csctheta;
-    float kr = themesh->curv1[i] * u * u + themesh->curv2[i] * v * v;
-    float tr = u * v * (themesh->curv2[i] - themesh->curv1[i]);
+    float                     u = (viewdir DOT mesh->pdir1[i]) * csctheta;
+    float                     v = (viewdir DOT mesh->pdir2[i]) * csctheta;
+    float kr = mesh->curv1[i] * u * u + mesh->curv2[i] * v * v;
+    float tr = u * v * (mesh->curv2[i] - mesh->curv1[i]);
     float kt =
-        themesh->curv1[i] * (1.0f - u * u) + themesh->curv2[i] * (1.0f - v * v);
-    trimesh::vec w           = u * themesh->pdir1[i] + v * themesh->pdir2[i];
-    trimesh::vec wperp       = u * themesh->pdir2[i] - v * themesh->pdir1[i];
-    const trimesh::Vec<4>& C = themesh->dcurv[i];
+        mesh->curv1[i] * (1.0f - u * u) + mesh->curv2[i] * (1.0f - v * v);
+    trimesh::vec w           = u * mesh->pdir1[i] + v * mesh->pdir2[i];
+    trimesh::vec wperp       = u * mesh->pdir2[i] - v * mesh->pdir1[i];
+    const trimesh::Vec<4>& C = mesh->dcurv[i];
 
-    trimesh::vec g = themesh->pdir1[i] *
+    trimesh::vec g = mesh->pdir1[i] *
                          (u * u * C[0] + 2.0f * u * v * C[1] + v * v * C[2]) +
-                     themesh->pdir2[i] *
+                     mesh->pdir2[i] *
                          (u * u * C[1] + 2.0f * u * v * C[2] + v * v * C[3]) -
                      2.0f * csctheta * tr *
                          (rlen_viewdir * wperp + ndotv * (tr * w + kt * wperp));
@@ -153,7 +153,7 @@ float find_zero_hermite(int v0, int v1, float val0, float val1,
 // opposite sign from val1 and val2 - the following function is the
 // general one that figures out which one actually has the different sign.
 void compute_face_isoline2(int v0, int v1, int v2, const isoline_params& params,
-                           trimesh::TriMesh*             themesh,
+                           trimesh::TriMesh*             mesh,
                            const trimesh::point&         viewpos,
                            const trimesh::vec&           currcolor,
                            std::vector<trimesh::point3>& points,
@@ -165,22 +165,22 @@ void compute_face_isoline2(int v0, int v1, int v2, const isoline_params& params,
     auto&& test_den = params.test_den;
     float  w10      = params.do_hermite ?
                           find_zero_hermite(v0, v1, val[v0], val[v1],
-                                            gradkr(v0, themesh, viewpos),
-                                            gradkr(v1, themesh, viewpos), themesh) :
+                                            gradkr(v0, mesh, viewpos),
+                                            gradkr(v1, mesh, viewpos), mesh) :
                           find_zero_linear(val[v0], val[v1]);
     float  w01      = 1.0f - w10;
     float  w20      = params.do_hermite ?
                           find_zero_hermite(v0, v2, val[v0], val[v2],
-                                            gradkr(v0, themesh, viewpos),
-                                            gradkr(v2, themesh, viewpos), themesh) :
+                                            gradkr(v0, mesh, viewpos),
+                                            gradkr(v2, mesh, viewpos), mesh) :
                           find_zero_linear(val[v0], val[v2]);
     float  w02      = 1.0f - w20;
 
     // Points along edges
     trimesh::point p1 =
-        w01 * themesh->vertices[v0] + w10 * themesh->vertices[v1];
+        w01 * mesh->vertices[v0] + w10 * mesh->vertices[v1];
     trimesh::point p2 =
-        w02 * themesh->vertices[v0] + w20 * themesh->vertices[v2];
+        w02 * mesh->vertices[v0] + w20 * mesh->vertices[v2];
 
     float test_num1 = 1.0f, test_num2 = 1.0f;
     float test_den1 = 1.0f, test_den2 = 1.0f;
@@ -255,7 +255,7 @@ void compute_face_isoline2(int v0, int v1, int v2, const isoline_params& params,
 // See above.  This is the driver function that figures out which of
 // v0, v1, v2 has a different sign from the others.
 void compute_face_isoline(int v0, int v1, int v2, const isoline_params& params,
-                          trimesh::TriMesh*             themesh,
+                          trimesh::TriMesh*             mesh,
                           const trimesh::point&         viewpos,
                           const trimesh::vec&           currcolor,
                           std::vector<trimesh::point3>& points,
@@ -294,28 +294,28 @@ void compute_face_isoline(int v0, int v1, int v2, const isoline_params& params,
     // Figure out which val has different sign, and draw
     if ((val[v0] < 0.0f && val[v1] >= 0.0f && val[v2] >= 0.0f) ||
         (val[v0] > 0.0f && val[v1] <= 0.0f && val[v2] <= 0.0f))
-        compute_face_isoline2(v0, v1, v2, params, themesh, viewpos, currcolor,
+        compute_face_isoline2(v0, v1, v2, params, mesh, viewpos, currcolor,
                               points, colors);
     else if ((val[v1] < 0.0f && val[v2] >= 0.0f && val[v0] >= 0.0f) ||
              (val[v1] > 0.0f && val[v2] <= 0.0f && val[v0] <= 0.0f))
-        compute_face_isoline2(v1, v2, v0, params, themesh, viewpos, currcolor,
+        compute_face_isoline2(v1, v2, v0, params, mesh, viewpos, currcolor,
                               points, colors);
     else if ((val[v2] < 0.0f && val[v0] >= 0.0f && val[v1] >= 0.0f) ||
              (val[v2] > 0.0f && val[v0] <= 0.0f && val[v1] <= 0.0f))
-        compute_face_isoline2(v2, v0, v1, params, themesh, viewpos, currcolor,
+        compute_face_isoline2(v2, v0, v1, params, mesh, viewpos, currcolor,
                               points, colors);
 }
 
 // Takes a scalar field and renders the zero crossings, but only where
 // test_num/test_den is greater than 0.
-auto compute_isolines(const isoline_params& params, trimesh::TriMesh* themesh,
+auto compute_isolines(const isoline_params& params, trimesh::TriMesh* mesh,
                       const trimesh::point& viewpos,
                       const trimesh::vec&   currcolor)
 {
 
-    const int* t        = &themesh->tstrips[0];
+    const int* t        = &mesh->tstrips[0];
     const int* stripend = t;
-    const int* end      = t + themesh->tstrips.size();
+    const int* end      = t + mesh->tstrips.size();
 
     struct
     {
@@ -343,17 +343,17 @@ auto compute_isolines(const isoline_params& params, trimesh::TriMesh* themesh,
         const float &v0 = val[*t], &v1 = val[*(t - 1)], &v2 = val[*(t - 2)];
         if ((v0 > 0.0f || v1 > 0.0f || v2 > 0.0f) &&
             (v0 < 0.0f || v1 < 0.0f || v2 < 0.0f))
-            compute_face_isoline(*(t - 2), *(t - 1), *t, params, themesh,
+            compute_face_isoline(*(t - 2), *(t - 1), *t, params, mesh,
                                  viewpos, currcolor, ret.points, ret.colors);
         t++;
     }
 }
 
-void draw_isolines(const isoline_params& params, trimesh::TriMesh* themesh,
+void draw_isolines(const isoline_params& params, trimesh::TriMesh* mesh,
                    const trimesh::point& viewpos, const trimesh::vec& currcolor)
 {
     auto [points, colors] =
-        compute_isolines(params, themesh, viewpos, currcolor);
+        compute_isolines(params, mesh, viewpos, currcolor);
     for (auto i = 0; i < points.size(); ++i)
     {
         glColor4fv(colors[i].data());

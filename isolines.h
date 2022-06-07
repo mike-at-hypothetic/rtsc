@@ -15,7 +15,7 @@ struct isoline_params
     float                    fade{0.0f};
 };
 
-void draw_isolines(const isoline_params& params, trimesh::TriMesh* themesh,
+void draw_isolines(const isoline_params& params, trimesh::TriMesh* mesh,
                    const trimesh::point& viewpos,
                    const trimesh::vec&   currcolor);
 
