@@ -18,7 +18,7 @@ Real-time suggestive contours - these days, it also draws many other lines.
 #include "TriMesh_algo.h"
 #include "XForm.h"
 #include "apparentridge.h"
-#include "isolines.h"
+#include "rtsc.h"
 #include "timestamp.h"
 #include <stdio.h>
 #include <stdlib.h>

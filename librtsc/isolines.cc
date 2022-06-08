@@ -1,8 +1,8 @@
 #include <GL/glut.h>
 #include <TriMesh.h>
 #include <Vec.h>
-#include <isolines.h>
 #include <mathutil.h>
+#include "rtsc.h"
 
 // Compute gradient of (kr * sin^2 theta) at vertex i
 static inline trimesh::vec gradkr(int i, trimesh::TriMesh* mesh,
