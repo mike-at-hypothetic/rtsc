@@ -13,3 +13,4 @@ find_package(Glui REQUIRED)
 
 add_subdirectory(librtsc)
 add_subdirectory(rtsc_gui)
+add_subdirectory(gen_contours)
