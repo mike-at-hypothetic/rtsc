@@ -1012,6 +1012,18 @@ void draw_mesh_ph(bool do_ridge, const std::vector<float>& ndotv,
     }
 }
 
+void draw_isolines(const isoline_params& params, trimesh::TriMesh* mesh,
+                   const trimesh::point& viewpos, const trimesh::vec& currcolor)
+{
+    auto [points, colors] =
+        compute_isolines(params, mesh, viewpos, currcolor);
+    for (auto i = 0; i < points.size(); ++i)
+    {
+        glColor4fv(colors[i].data());
+        glVertex3fv(points[i].data());
+    }
+}
+
 // Draw exterior silhouette of the mesh: this just draws
 // thick contours, which are partially hidden by the mesh.
 // Note: this needs to happen *before* draw_base_mesh...

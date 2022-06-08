@@ -1,6 +1,8 @@
-#ifndef ISOLINES_H
-#define ISOLINES_H
+#ifndef RTSC_H
+#define RTSC_H
 
+#include <TriMesh.h>
+#include <utility>
 #include <vector>
 
 struct isoline_params
@@ -15,8 +17,8 @@ struct isoline_params
     float                    fade{0.0f};
 };
 
-void draw_isolines(const isoline_params& params, trimesh::TriMesh* mesh,
-                   const trimesh::point& viewpos,
-                   const trimesh::vec&   currcolor);
+std::pair<std::vector<trimesh::point3>, std::vector<trimesh::vec4>>
+compute_isolines(const isoline_params& params, trimesh::TriMesh* mesh,
+                 const trimesh::point& viewpos, const trimesh::vec& currcolor);
 
 #endif

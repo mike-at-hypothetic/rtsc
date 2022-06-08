@@ -1,5 +1,3 @@
-#include <GL/glut.h>
-#include <TriMesh.h>
 #include <Vec.h>
 #include <mathutil.h>
 #include "rtsc.h"
@@ -308,7 +306,8 @@ void compute_face_isoline(int v0, int v1, int v2, const isoline_params& params,
 
 // Takes a scalar field and renders the zero crossings, but only where
 // test_num/test_den is greater than 0.
-auto compute_isolines(const isoline_params& params, trimesh::TriMesh* mesh,
+std::pair<std::vector<trimesh::point3>, std::vector<trimesh::vec4>>
+compute_isolines(const isoline_params& params, trimesh::TriMesh* mesh,
                       const trimesh::point& viewpos,
                       const trimesh::vec&   currcolor)
 {
@@ -317,12 +316,7 @@ auto compute_isolines(const isoline_params& params, trimesh::TriMesh* mesh,
     const int* stripend = t;
     const int* end      = t + mesh->tstrips.size();
 
-    struct
-    {
-        std::vector<trimesh::point3> points{};
-        std::vector<trimesh::vec4>  colors{};
-    } ret;
-
+    std::pair<std::vector<trimesh::point3>, std::vector<trimesh::vec4>> ret;
     // Walk through triangle strips
     while (1)
     {
@@ -344,19 +338,7 @@ auto compute_isolines(const isoline_params& params, trimesh::TriMesh* mesh,
         if ((v0 > 0.0f || v1 > 0.0f || v2 > 0.0f) &&
             (v0 < 0.0f || v1 < 0.0f || v2 < 0.0f))
             compute_face_isoline(*(t - 2), *(t - 1), *t, params, mesh,
-                                 viewpos, currcolor, ret.points, ret.colors);
+                                 viewpos, currcolor, ret.first, ret.second);
         t++;
-    }
-}
-
-void draw_isolines(const isoline_params& params, trimesh::TriMesh* mesh,
-                   const trimesh::point& viewpos, const trimesh::vec& currcolor)
-{
-    auto [points, colors] =
-        compute_isolines(params, mesh, viewpos, currcolor);
-    for (auto i = 0; i < points.size(); ++i)
-    {
-        glColor4fv(colors[i].data());
-        glVertex3fv(points[i].data());
     }
 }
