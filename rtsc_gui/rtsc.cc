@@ -131,8 +131,10 @@ make_texture(float width)
     {
         for (int i = 0; i < texsize * texsize; i++)
         {
-            float x   = (float)(i % texsize) - 0.5f * texsize + 0.5f;
-            float y   = (float)(i / texsize) - 0.5f * texsize + 0.5f;
+            int   ix  = i % texsize;
+            int   iy  = i / texsize;
+            float x   = (float)ix - 0.5f * texsize + 0.5f;
+            float y   = (float)iy - 0.5f * texsize + 0.5f;
             float val = 1;
             if (texsize >= 4)
                 if (fabs(x) < width && y > 0.0f)
@@ -293,7 +295,8 @@ void
 make_light_textures(GLuint* texture_contexts)
 {
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    const int     texsize = 256;
+    const int     texsize      = 256;
+    const int     half_texsize = texsize / 2;
     unsigned char texture[3 * texsize];
 
     glGenTextures(nlighting_styles, texture_contexts);
@@ -302,7 +305,7 @@ make_light_textures(GLuint* texture_contexts)
     glBindTexture(GL_TEXTURE_2D, texture_contexts[LIGHTING_LAMBERTIAN]);
     for (int i = 0; i < texsize; i++)
     {
-        float z    = float(i + 1 - texsize / 2) / (0.5f * texsize);
+        float z    = float(i + 1 - half_texsize) / (0.5f * texsize);
         texture[i] = std::max(0, int(255 * z));
     }
     glTexImage2D(GL_TEXTURE_2D, 0, 1, texsize, 1, 0, GL_LUMINANCE,
@@ -312,7 +315,7 @@ make_light_textures(GLuint* texture_contexts)
     glBindTexture(GL_TEXTURE_2D, texture_contexts[LIGHTING_LAMBERTIAN2]);
     for (int i = 0; i < texsize; i++)
     {
-        float z    = float(i + 1 - texsize / 2) / (0.5f * texsize);
+        float z    = float(i + 1 - half_texsize) / (0.5f * texsize);
         texture[i] = std::max(0, int(255 * sqrt(z)));
     }
     glTexImage2D(GL_TEXTURE_2D, 0, 1, texsize, 1, 0, GL_LUMINANCE,
@@ -322,7 +325,7 @@ make_light_textures(GLuint* texture_contexts)
     glBindTexture(GL_TEXTURE_2D, texture_contexts[LIGHTING_HEMISPHERE]);
     for (int i = 0; i < texsize; i++)
     {
-        float z    = float(i + 1 - texsize / 2) / (0.5f * texsize);
+        float z    = float(i + 1 - half_texsize) / (0.5f * texsize);
         texture[i] = std::max(0, int(255 * (0.5f + 0.5f * z)));
     }
     glTexImage2D(GL_TEXTURE_2D, 0, 1, texsize, 1, 0, GL_LUMINANCE,
@@ -332,7 +335,7 @@ make_light_textures(GLuint* texture_contexts)
     glBindTexture(GL_TEXTURE_2D, texture_contexts[LIGHTING_TOON]);
     for (int i = 0; i < texsize; i++)
     {
-        float z    = float(i + 1 - texsize / 2) / (0.5f * texsize);
+        float z    = float(i + 1 - half_texsize) / (0.5f * texsize);
         int   tmp  = int(255 * z);
         texture[i] = std::min(std::max(2 * (tmp - 50), 210), 255);
     }
@@ -343,7 +346,7 @@ make_light_textures(GLuint* texture_contexts)
     glBindTexture(GL_TEXTURE_2D, texture_contexts[LIGHTING_TOONBW]);
     for (int i = 0; i < texsize; i++)
     {
-        float z    = float(i + 1 - texsize / 2) / (0.5f * texsize);
+        float z    = float(i + 1 - half_texsize) / (0.5f * texsize);
         int   tmp  = int(255 * z);
         texture[i] = std::min(std::max(25 * (tmp - 20), 0), 255);
     }
@@ -354,7 +357,7 @@ make_light_textures(GLuint* texture_contexts)
     glBindTexture(GL_TEXTURE_2D, texture_contexts[LIGHTING_GOOCH]);
     for (int i = 0; i < texsize; i++)
     {
-        float z            = float(i + 1 - texsize / 2) / (0.5f * texsize);
+        float z            = float(i + 1 - half_texsize) / (0.5f * texsize);
         float r            = 0.75f + 0.25f * z;
         float g            = r;
         float b            = 0.9f - 0.1f * z;
