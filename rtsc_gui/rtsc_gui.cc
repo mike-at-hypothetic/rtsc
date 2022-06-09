@@ -11,7 +11,6 @@ rtsc.cc
 Real-time suggestive contours - these days, it also draws many other lines.
 */
 
-#include "rtsc.h"
 #include "GL/glui.h"
 #include "GL/glut.h"
 #include "GLCamera.h"
@@ -19,6 +18,7 @@ Real-time suggestive contours - these days, it also draws many other lines.
 #include "TriMesh_algo.h"
 #include "XForm.h"
 #include "apparentridge.h"
+#include "rtsc.h"
 #include "timestamp.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -604,95 +604,6 @@ draw_base_mesh(trimesh::TriMesh* mesh)
     }
 
     glDisableClientState(GL_VERTEX_ARRAY);
-}
-
-std::vector<float>
-compute_ndotv(const trimesh::TriMesh& mesh, trimesh::point3 view_pos)
-{
-    const int          nv = mesh.vertices.size();
-    std::vector<float> ndotv{};
-    ndotv.reserve(nv);
-    for (int i = 0; i < nv; ++i)
-    {
-        trimesh::vec viewdir = trimesh::normalized(view_pos - mesh.vertices[i]);
-        ndotv.emplace_back(viewdir DOT mesh.normals[i]);
-    }
-    return ndotv;
-}
-
-std::vector<float>
-compute_kr(const trimesh::TriMesh& mesh, trimesh::point3 view_pos)
-{
-    const int          nv = mesh.vertices.size();
-    std::vector<float> kr{};
-    kr.reserve(nv);
-    for (int i = 0; i < nv; ++i)
-    {
-        trimesh::vec viewdir = trimesh::normalized(view_pos - mesh.vertices[i]);
-        float u = viewdir DOT mesh.pdir1[i], u2 = u * u;
-        float v = viewdir DOT mesh.pdir2[i], v2 = v * v;
-
-        // Note:  this is actually Kr * sin^2 theta
-        kr.emplace_back(mesh.curv1[i] * u2 + mesh.curv2[i] * v2);
-    }
-    return kr;
-}
-
-std::pair<std::vector<float>, std::vector<float>>
-compute_schtest(const trimesh::TriMesh&   mesh,
-                const std::vector<float>& sctest_den, trimesh::point3 view_pos,
-                float scthresh, float shthresh, bool extra_sin2theta)
-{
-    const int          nv = mesh.vertices.size();
-    std::vector<float> sctest_num(nv);
-    std::vector<float> shtest_num(nv);
-    for (int i = 0; i < nv; ++i)
-    {
-        trimesh::vec viewdir = trimesh::normalized(view_pos - mesh.vertices[i]);
-        float u = viewdir DOT mesh.pdir1[i], u2 = u * u;
-        float v = viewdir DOT mesh.pdir2[i], v2 = v * v;
-
-        // Use DwKr * sin(theta) / cos(theta) for cutoff test
-        sctest_num[i] =
-            u2 * (u * mesh.dcurv[i][0] + 3.0f * v * mesh.dcurv[i][1]) +
-            v2 * (3.0f * u * mesh.dcurv[i][2] + v * mesh.dcurv[i][3]);
-        float csc2theta = 1.0f / (u2 + v2);
-        sctest_num[i] *= csc2theta;
-        float tr = (mesh.curv2[i] - mesh.curv1[i]) * u * v * csc2theta;
-        sctest_num[i] -= 2.0f * sctest_den[i] * trimesh::sqr(tr);
-        if (extra_sin2theta)
-            sctest_num[i] *= u2 + v2;
-
-        if (draw_sh)
-        {
-            shtest_num[i] = -sctest_num[i];
-            shtest_num[i] -= shthresh * sctest_den[i];
-        }
-        sctest_num[i] -= scthresh * sctest_den[i];
-        // Note:  this is actually Kr * sin^2 theta
-        sctest_num.emplace_back(mesh.curv1[i] * u2 + mesh.curv2[i] * v2);
-    }
-    return {std::move(sctest_num), std::move(shtest_num)};
-}
-
-std::pair<std::vector<float>, std::vector<trimesh::vec2>>
-compute_q1t1(const trimesh::TriMesh& mesh, trimesh::point view_pos,
-             const std::vector<float>& ndotv)
-{
-    const int                  nv = mesh.vertices.size();
-    std::vector<float>         q1(nv);
-    std::vector<trimesh::vec2> t1(nv);
-    for (int i = 0; i < nv; ++i)
-    {
-        trimesh::vec viewdir = trimesh::normalized(view_pos - mesh.vertices[i]);
-        float u = viewdir DOT mesh.pdir1[i], u2 = u * u;
-        float v = viewdir DOT mesh.pdir2[i], v2 = v * v;
-
-        float csc2theta = 1.0f / (u2 + v2);
-        compute_viewdep_curv(&mesh, i, ndotv[i], u2 * csc2theta,
-                             u * v * csc2theta, v2 * csc2theta, q1[i], t1[i]);
-    }
-    return {std::move(q1), std::move(t1)};
 }
 
 // Compute per-vertex n dot l, n dot v, radial curvature, and

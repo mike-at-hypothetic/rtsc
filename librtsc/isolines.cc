@@ -1,10 +1,98 @@
+#include "apparentridge.h"
+#include "rtsc.h"
 #include <Vec.h>
 #include <mathutil.h>
-#include "rtsc.h"
+
+std::vector<float>
+compute_ndotv(const trimesh::TriMesh& mesh, trimesh::point3 view_pos)
+{
+    const int          nv = mesh.vertices.size();
+    std::vector<float> ndotv{};
+    ndotv.reserve(nv);
+    for (int i = 0; i < nv; ++i)
+    {
+        trimesh::vec viewdir = trimesh::normalized(view_pos - mesh.vertices[i]);
+        ndotv.emplace_back(viewdir DOT mesh.normals[i]);
+    }
+    return ndotv;
+}
+
+std::vector<float>
+compute_kr(const trimesh::TriMesh& mesh, trimesh::point3 view_pos)
+{
+    const int          nv = mesh.vertices.size();
+    std::vector<float> kr{};
+    kr.reserve(nv);
+    for (int i = 0; i < nv; ++i)
+    {
+        trimesh::vec viewdir = trimesh::normalized(view_pos - mesh.vertices[i]);
+        float u = viewdir DOT mesh.pdir1[i], u2 = u * u;
+        float v = viewdir DOT mesh.pdir2[i], v2 = v * v;
+
+        // Note:  this is actually Kr * sin^2 theta
+        kr.emplace_back(mesh.curv1[i] * u2 + mesh.curv2[i] * v2);
+    }
+    return kr;
+}
+
+std::pair<std::vector<float>, std::vector<float>>
+compute_schtest(const trimesh::TriMesh&   mesh,
+                const std::vector<float>& sctest_den, trimesh::point3 view_pos,
+                float scthresh, float shthresh, bool extra_sin2theta)
+{
+    const int          nv = mesh.vertices.size();
+    std::vector<float> sctest_num(nv);
+    std::vector<float> shtest_num(nv);
+    for (int i = 0; i < nv; ++i)
+    {
+        trimesh::vec viewdir = trimesh::normalized(view_pos - mesh.vertices[i]);
+        float u = viewdir DOT mesh.pdir1[i], u2 = u * u;
+        float v = viewdir DOT mesh.pdir2[i], v2 = v * v;
+
+        // Use DwKr * sin(theta) / cos(theta) for cutoff test
+        sctest_num[i] =
+            u2 * (u * mesh.dcurv[i][0] + 3.0f * v * mesh.dcurv[i][1]) +
+            v2 * (3.0f * u * mesh.dcurv[i][2] + v * mesh.dcurv[i][3]);
+        float csc2theta = 1.0f / (u2 + v2);
+        sctest_num[i] *= csc2theta;
+        float tr = (mesh.curv2[i] - mesh.curv1[i]) * u * v * csc2theta;
+        sctest_num[i] -= 2.0f * sctest_den[i] * trimesh::sqr(tr);
+        if (extra_sin2theta)
+            sctest_num[i] *= u2 + v2;
+
+        shtest_num[i] = -sctest_num[i];
+        shtest_num[i] -= shthresh * sctest_den[i];
+
+        sctest_num[i] -= scthresh * sctest_den[i];
+        // Note:  this is actually Kr * sin^2 theta
+        sctest_num.emplace_back(mesh.curv1[i] * u2 + mesh.curv2[i] * v2);
+    }
+    return {std::move(sctest_num), std::move(shtest_num)};
+}
+
+std::pair<std::vector<float>, std::vector<trimesh::vec2>>
+compute_q1t1(const trimesh::TriMesh& mesh, trimesh::point view_pos,
+             const std::vector<float>& ndotv)
+{
+    const int                  nv = mesh.vertices.size();
+    std::vector<float>         q1(nv);
+    std::vector<trimesh::vec2> t1(nv);
+    for (int i = 0; i < nv; ++i)
+    {
+        trimesh::vec viewdir = trimesh::normalized(view_pos - mesh.vertices[i]);
+        float u = viewdir DOT mesh.pdir1[i], u2 = u * u;
+        float v = viewdir DOT mesh.pdir2[i], v2 = v * v;
+
+        float csc2theta = 1.0f / (u2 + v2);
+        compute_viewdep_curv(&mesh, i, ndotv[i], u2 * csc2theta,
+                             u * v * csc2theta, v2 * csc2theta, q1[i], t1[i]);
+    }
+    return {std::move(q1), std::move(t1)};
+}
 
 // Compute gradient of (kr * sin^2 theta) at vertex i
-static inline trimesh::vec gradkr(int i, trimesh::TriMesh* mesh,
-                                  const trimesh::point& viewpos)
+static inline trimesh::vec
+gradkr(int i, trimesh::TriMesh* mesh, const trimesh::point& viewpos)
 {
     trimesh::vec viewdir      = viewpos - mesh->vertices[i];
     float        rlen_viewdir = 1.0f / len(viewdir);
@@ -19,16 +107,15 @@ static inline trimesh::vec gradkr(int i, trimesh::TriMesh* mesh,
     float tr = u * v * (mesh->curv2[i] - mesh->curv1[i]);
     float kt =
         mesh->curv1[i] * (1.0f - u * u) + mesh->curv2[i] * (1.0f - v * v);
-    trimesh::vec w           = u * mesh->pdir1[i] + v * mesh->pdir2[i];
-    trimesh::vec wperp       = u * mesh->pdir2[i] - v * mesh->pdir1[i];
-    const trimesh::Vec<4>& C = mesh->dcurv[i];
+    trimesh::vec           w     = u * mesh->pdir1[i] + v * mesh->pdir2[i];
+    trimesh::vec           wperp = u * mesh->pdir2[i] - v * mesh->pdir1[i];
+    const trimesh::Vec<4>& C     = mesh->dcurv[i];
 
-    trimesh::vec g = mesh->pdir1[i] *
-                         (u * u * C[0] + 2.0f * u * v * C[1] + v * v * C[2]) +
-                     mesh->pdir2[i] *
-                         (u * u * C[1] + 2.0f * u * v * C[2] + v * v * C[3]) -
-                     2.0f * csctheta * tr *
-                         (rlen_viewdir * wperp + ndotv * (tr * w + kt * wperp));
+    trimesh::vec g =
+        mesh->pdir1[i] * (u * u * C[0] + 2.0f * u * v * C[1] + v * v * C[2]) +
+        mesh->pdir2[i] * (u * u * C[1] + 2.0f * u * v * C[2] + v * v * C[3]) -
+        2.0f * csctheta * tr *
+            (rlen_viewdir * wperp + ndotv * (tr * w + kt * wperp));
     g *= (1.0f - trimesh::sqr(ndotv));
     g -= 2.0f * kr * sintheta * ndotv * (kr * w + tr * wperp);
     return g;
@@ -36,15 +123,17 @@ static inline trimesh::vec gradkr(int i, trimesh::TriMesh* mesh,
 
 // Find a zero crossing between val0 and val1 by linear interpolation
 // Returns 0 if zero crossing is at val0, 1 if at val1, etc.
-static inline float find_zero_linear(float val0, float val1)
+static inline float
+find_zero_linear(float val0, float val1)
 {
     return val0 / (val0 - val1);
 }
 
 // Find a zero crossing using Hermite interpolation
-float find_zero_hermite(int v0, int v1, float val0, float val1,
-                        const trimesh::vec& grad0, const trimesh::vec& grad1,
-                        trimesh::TriMesh* mesh)
+float
+find_zero_hermite(int v0, int v1, float val0, float val1,
+                  const trimesh::vec& grad0, const trimesh::vec& grad1,
+                  trimesh::TriMesh* mesh)
 {
     if (val0 == val1)
         return 0.5f;
@@ -150,12 +239,12 @@ float find_zero_hermite(int v0, int v1, float val0, float val1,
 // to make sure they are positive.  This function assumes that val0 has
 // opposite sign from val1 and val2 - the following function is the
 // general one that figures out which one actually has the different sign.
-void compute_face_isoline2(int v0, int v1, int v2, const isoline_params& params,
-                           trimesh::TriMesh*             mesh,
-                           const trimesh::point&         viewpos,
-                           const trimesh::vec&           currcolor,
-                           std::vector<trimesh::point3>& points,
-                           std::vector<trimesh::vec4>&  colors)
+void
+compute_face_isoline2(int v0, int v1, int v2, const isoline_params& params,
+                      trimesh::TriMesh* mesh, const trimesh::point& viewpos,
+                      const trimesh::vec&           currcolor,
+                      std::vector<trimesh::point3>& points,
+                      std::vector<trimesh::vec4>&   colors)
 {
     // How far along each edge?
     auto&& val      = params.val;
@@ -175,10 +264,8 @@ void compute_face_isoline2(int v0, int v1, int v2, const isoline_params& params,
     float  w02      = 1.0f - w20;
 
     // Points along edges
-    trimesh::point p1 =
-        w01 * mesh->vertices[v0] + w10 * mesh->vertices[v1];
-    trimesh::point p2 =
-        w02 * mesh->vertices[v0] + w20 * mesh->vertices[v2];
+    trimesh::point p1 = w01 * mesh->vertices[v0] + w10 * mesh->vertices[v1];
+    trimesh::point p2 = w02 * mesh->vertices[v0] + w20 * mesh->vertices[v2];
 
     float test_num1 = 1.0f, test_num2 = 1.0f;
     float test_den1 = 1.0f, test_den2 = 1.0f;
@@ -229,7 +316,7 @@ void compute_face_isoline2(int v0, int v1, int v2, const isoline_params& params,
         float num = (1.0f - z1) * test_num1 + z1 * test_num2;
         float den = (1.0f - z1) * test_den1 + z1 * test_den2;
         colors.push_back({currcolor[0], currcolor[1], currcolor[2],
-                  num / (den * params.fade + num)});
+                          num / (den * params.fade + num)});
         points.push_back((1.0f - z1) * p1 + z1 * p2);
         npts++;
     }
@@ -238,26 +325,26 @@ void compute_face_isoline2(int v0, int v1, int v2, const isoline_params& params,
         float num = (1.0f - z2) * test_num1 + z2 * test_num2;
         float den = (1.0f - z2) * test_den1 + z2 * test_den2;
         colors.push_back({currcolor[0], currcolor[1], currcolor[2],
-                  num / (den * params.fade + num)});
+                          num / (den * params.fade + num)});
         points.push_back((1.0f - z2) * p1 + z2 * p2);
         npts++;
     }
     if (npts != 2)
     {
         colors.push_back({currcolor[0], currcolor[1], currcolor[2],
-                  test_num2 / (test_den2 * params.fade + test_num2)});
+                          test_num2 / (test_den2 * params.fade + test_num2)});
         points.push_back(p2);
     }
 }
 
 // See above.  This is the driver function that figures out which of
 // v0, v1, v2 has a different sign from the others.
-void compute_face_isoline(int v0, int v1, int v2, const isoline_params& params,
-                          trimesh::TriMesh*             mesh,
-                          const trimesh::point&         viewpos,
-                          const trimesh::vec&           currcolor,
-                          std::vector<trimesh::point3>& points,
-                          std::vector<trimesh::vec4>&  colors)
+void
+compute_face_isoline(int v0, int v1, int v2, const isoline_params& params,
+                     trimesh::TriMesh* mesh, const trimesh::point& viewpos,
+                     const trimesh::vec&           currcolor,
+                     std::vector<trimesh::point3>& points,
+                     std::vector<trimesh::vec4>&   colors)
 {
     // Backface culling
     if (likely(params.do_bfcull && params.ndotv[v0] <= 0.0f &&
@@ -308,8 +395,7 @@ void compute_face_isoline(int v0, int v1, int v2, const isoline_params& params,
 // test_num/test_den is greater than 0.
 std::pair<std::vector<trimesh::point3>, std::vector<trimesh::vec4>>
 compute_isolines(const isoline_params& params, trimesh::TriMesh* mesh,
-                      const trimesh::point& viewpos,
-                      const trimesh::vec&   currcolor)
+                 const trimesh::point& viewpos, const trimesh::vec& currcolor)
 {
 
     const int* t        = &mesh->tstrips[0];
@@ -337,8 +423,8 @@ compute_isolines(const isoline_params& params, trimesh::TriMesh* mesh,
         const float &v0 = val[*t], &v1 = val[*(t - 1)], &v2 = val[*(t - 2)];
         if ((v0 > 0.0f || v1 > 0.0f || v2 > 0.0f) &&
             (v0 < 0.0f || v1 < 0.0f || v2 < 0.0f))
-            compute_face_isoline(*(t - 2), *(t - 1), *t, params, mesh,
-                                 viewpos, currcolor, ret.first, ret.second);
+            compute_face_isoline(*(t - 2), *(t - 1), *t, params, mesh, viewpos,
+                                 currcolor, ret.first, ret.second);
         t++;
     }
 }
