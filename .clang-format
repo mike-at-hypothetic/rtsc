@@ -7,6 +7,7 @@ ColumnLimit: '80'
 PointerAlignment: Left
 AlignConsecutiveAssignments: true
 AlignConsecutiveDeclarations: true
+AlwaysBreakAfterReturnType: AllDefinitions
 BreakBeforeTernaryOperators: false
 
 ...
