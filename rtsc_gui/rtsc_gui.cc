@@ -962,15 +962,22 @@ draw_mesh_ph(bool do_ridge, const std::vector<float>& ndotv, bool do_bfcull,
 }
 
 void
-draw_isolines(const isoline_params& params, trimesh::TriMesh* mesh,
-              const trimesh::point& viewpos, const trimesh::vec& currcolor)
+draw_segments(const std::vector<trimesh::point3>& points,
+              const std::vector<trimesh::vec4>&   colors)
 {
-    auto [points, colors] = compute_isolines(params, mesh, viewpos, currcolor);
     for (auto i = 0; i < points.size(); ++i)
     {
         glColor4fv(colors[i].data());
         glVertex3fv(points[i].data());
     }
+}
+
+void
+draw_isolines(const isoline_params& params, trimesh::TriMesh* mesh,
+              const trimesh::point& viewpos, const trimesh::vec& currcolor)
+{
+    auto [points, colors] = compute_isolines(params, mesh, viewpos, currcolor);
+    draw_segments(points, colors);
 }
 
 // Draw exterior silhouette of the mesh: this just draws
@@ -1229,11 +1236,13 @@ draw_mesh(trimesh::TriMesh* mesh)
                 else
                     currcolor = trimesh::vec(0.55, 0.55, 0.55);
             }
+            auto [points, colors] = compute_mesh_app_ridges(
+                mesh, ndotv, q1, t1, Dt1q1, true, test_ar,
+                ar_thresh / trimesh::sqr(feature_size), draw_faded, currcolor);
             if (draw_colors)
                 glLineWidth(2);
             glBegin(GL_LINES);
-            draw_mesh_app_ridges(mesh, ndotv, q1, t1, Dt1q1, true, test_ar,
-                                 ar_thresh / trimesh::sqr(feature_size));
+            draw_segments(points, colors);
             glEnd();
         }
 
@@ -1363,10 +1372,12 @@ draw_mesh(trimesh::TriMesh* mesh)
     {
         if (draw_colors)
             currcolor = trimesh::vec(0.4, 0.4, 0);
+        auto [points, colors] = compute_mesh_app_ridges(
+            mesh, ndotv, q1, t1, Dt1q1, true, test_ar,
+            ar_thresh / trimesh::sqr(feature_size), draw_faded, currcolor);
         glLineWidth(2.5);
         glBegin(GL_LINES);
-        draw_mesh_app_ridges(mesh, ndotv, q1, t1, Dt1q1, true, test_ar,
-                             ar_thresh / trimesh::sqr(feature_size));
+        draw_segments(points, colors);
         glEnd();
     }
 

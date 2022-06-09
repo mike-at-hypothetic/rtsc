@@ -28,12 +28,13 @@ std::vector<float> compute_Dt1q1(const trimesh::TriMesh*           mesh,
                                  const std::vector<float>&         q1,
                                  const std::vector<trimesh::vec2>& t1);
 
-// Draw apparent ridges of the mesh
-void draw_mesh_app_ridges(const trimesh::TriMesh*           mesh,
-                          std::vector<float>&               ndotv,
-                          const std::vector<float>&         q1,
-                          const std::vector<trimesh::vec2>& t1,
-                          const std::vector<float>& Dt1q1, bool do_bfcull,
-                          bool do_test, float thresh);
+// Compute apparent ridges of the mesh
+std::pair<std::vector<trimesh::point3>, std::vector<trimesh::vec4>>
+compute_mesh_app_ridges(const trimesh::TriMesh* mesh, std::vector<float>& ndotv,
+                        const std::vector<float>&         q1,
+                        const std::vector<trimesh::vec2>& t1,
+                        const std::vector<float>& Dt1q1, bool do_bfcull,
+                        bool do_test, float thresh, bool draw_faded,
+                        trimesh::vec currcolor);
 
 #endif
