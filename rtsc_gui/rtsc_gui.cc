@@ -1338,11 +1338,13 @@ draw_mesh(trimesh::TriMesh* mesh)
         {
             if (draw_colors)
                 currcolor = trimesh::vec(0.4, 0.8, 0.4);
-            glLineWidth(1.5);
-            glBegin(GL_LINES);
             isoline_params params{
                 .val{ndotv}, .test_num{kr}, .ndotv{ndotv}, .do_test = !!test_c};
-            draw_isolines(params, mesh, viewpos, currcolor);
+            auto [points, colors] =
+                compute_isolines(params, mesh, viewpos, currcolor);
+            glLineWidth(1.5);
+            glBegin(GL_LINES);
+            draw_segments(points, colors);
             glEnd();
         }
 
