@@ -25,7 +25,8 @@ extern vec  currcolor; // Current line color
 // symmetric 2x2 matrix.  Solves characteristic equation.
 // Inputs: three elements of matrix (upper-left, diag, lower-right)
 // Outputs: largest (in magnitude) eigenvector/value
-static void largest_eig_2x2(float m1, float m12, float m2, vec2& e1, float& l1)
+static void
+largest_eig_2x2(float m1, float m12, float m2, vec2& e1, float& l1)
 {
     l1 = 0.5f * (m1 + m2);
     // The result of the below sqrt is positive, so to get the largest
@@ -46,8 +47,9 @@ static void largest_eig_2x2(float m1, float m12, float m2, vec2& e1, float& l1)
 // Pass in u^2, u*v, and v^2, since those are readily available.
 // Fills in q1 and t1 (using the paper's notation).
 // Note that the latter is expressed in the (pdir1,pdir2) coordinate basis
-void compute_viewdep_curv(const TriMesh* mesh, int i, float ndotv, float u2,
-                          float uv, float v2, float& q1, vec2& t1)
+void
+compute_viewdep_curv(const TriMesh* mesh, int i, float ndotv, float u2,
+                     float uv, float v2, float& q1, vec2& t1)
 {
     // Find the entries in Q = S * P^-1
     //                       = S + (sec theta - 1) * S * w * w^T
@@ -72,77 +74,85 @@ void compute_viewdep_curv(const TriMesh* mesh, int i, float ndotv, float u2,
 
 // Compute D_{t_1} q_1 - the derivative of max view-dependent curvature
 // in the principal max view-dependent curvature direction.
-void compute_Dt1q1(const TriMesh* mesh, int i, float ndotv,
-                   const vector<float>& q1, const vector<vec2>& t1,
-                   float& Dt1q1)
+std::vector<float>
+compute_Dt1q1(const trimesh::TriMesh* mesh, const std::vector<float> ndotv,
+              const std::vector<float>&         q1,
+              const std::vector<trimesh::vec2>& t1)
 {
-    const point& v0                = mesh->vertices[i];
-    float        this_viewdep_curv = q1[i];
-    vec world_t1    = t1[i][0] * mesh->pdir1[i] + t1[i][1] * mesh->pdir2[i];
-    vec world_t2    = mesh->normals[i] CROSS world_t1;
-    float v0_dot_t2 = v0 DOT world_t2;
-
-    Dt1q1 = 0.0f;
-    int n = 0;
-
-    int naf = mesh->adjacentfaces[i].size();
-    for (int j = 0; j < naf; j++)
+    auto               nv = mesh->vertices.size();
+    std::vector<float> Dt1q1(nv);
+    for (auto i = 0; i < nv; ++i)
     {
-        // We're in a triangle adjacent to the vertex of interest.
-        // The current vertex is v0 - let v1 and v2 be the other two
-        int          f   = mesh->adjacentfaces[i][j];
-        int          ind = mesh->faces[f].indexof(i);
-        int          i1  = mesh->faces[f][NEXT(ind)];
-        int          i2  = mesh->faces[f][PREV(ind)];
-        const point& v1  = mesh->vertices[i1];
-        const point& v2  = mesh->vertices[i2];
+        const point& v0                = mesh->vertices[i];
+        float        this_viewdep_curv = q1[i];
+        vec world_t1    = t1[i][0] * mesh->pdir1[i] + t1[i][1] * mesh->pdir2[i];
+        vec world_t2    = mesh->normals[i] CROSS world_t1;
+        float v0_dot_t2 = v0 DOT world_t2;
 
-        // Find the point p on the segment between v1 and v2 such that
-        // its vector from v0 is along t1, i.e. perpendicular to t2.
-        // Linear combination: p = w1*v1 + w2*v2, where w2 = 1-w1
-        float v1_dot_t2 = v1 DOT world_t2;
-        float v2_dot_t2 = v2 DOT world_t2;
-        float w1        = (v2_dot_t2 - v0_dot_t2) / (v2_dot_t2 - v1_dot_t2);
+        Dt1q1[i] = 0.0f;
+        int n    = 0;
 
-        // If w1 is not in [0..1) then we're not interested.
-        // Incidentally, the computation of w1 can result in infinity,
-        // but the comparison should do the right thing...
-        if (w1 < 0.0f || w1 >= 1.0f)
-            continue;
-
-        // Construct the opposite point
-        float w2 = 1.0f - w1;
-        point p  = w1 * v1 + w2 * v2;
-
-        // And interpolate to find the view-dependent curvature at that point
-        float interp_viewdep_curv = w1 * q1[i1] + w2 * q1[i2];
-
-        // Finally, take the *projected* view-dependent curvature derivative
-        float proj_dist = (p - v0) DOT world_t1;
-        proj_dist *= fabs(ndotv);
-        Dt1q1 += (interp_viewdep_curv - this_viewdep_curv) / proj_dist;
-        n++;
-
-        // To save time, quit as soon as we have two estimates
-        // (that's all we're going to get, anyway)
-        if (n == 2)
+        int naf = mesh->adjacentfaces[i].size();
+        for (int j = 0; j < naf; j++)
         {
-            Dt1q1 *= 0.5f;
-            return;
+            // We're in a triangle adjacent to the vertex of interest.
+            // The current vertex is v0 - let v1 and v2 be the other two
+            int          f   = mesh->adjacentfaces[i][j];
+            int          ind = mesh->faces[f].indexof(i);
+            int          i1  = mesh->faces[f][NEXT(ind)];
+            int          i2  = mesh->faces[f][PREV(ind)];
+            const point& v1  = mesh->vertices[i1];
+            const point& v2  = mesh->vertices[i2];
+
+            // Find the point p on the segment between v1 and v2 such that
+            // its vector from v0 is along t1, i.e. perpendicular to t2.
+            // Linear combination: p = w1*v1 + w2*v2, where w2 = 1-w1
+            float v1_dot_t2 = v1 DOT world_t2;
+            float v2_dot_t2 = v2 DOT world_t2;
+            float w1        = (v2_dot_t2 - v0_dot_t2) / (v2_dot_t2 - v1_dot_t2);
+
+            // If w1 is not in [0..1) then we're not interested.
+            // Incidentally, the computation of w1 can result in infinity,
+            // but the comparison should do the right thing...
+            if (w1 < 0.0f || w1 >= 1.0f)
+                continue;
+
+            // Construct the opposite point
+            float w2 = 1.0f - w1;
+            point p  = w1 * v1 + w2 * v2;
+
+            // And interpolate to find the view-dependent curvature at that
+            // point
+            float interp_viewdep_curv = w1 * q1[i1] + w2 * q1[i2];
+
+            // Finally, take the *projected* view-dependent curvature derivative
+            float proj_dist = (p - v0) DOT world_t1;
+            proj_dist *= fabs(ndotv[i]);
+            Dt1q1[i] += (interp_viewdep_curv - this_viewdep_curv) / proj_dist;
+            n++;
+
+            // To save time, quit as soon as we have two estimates
+            // (that's all we're going to get, anyway)
+            if (n == 2)
+            {
+                Dt1q1[i] *= 0.5f;
+                break;
+            }
         }
     }
+    return Dt1q1;
 }
 
 // Draw part of an apparent ridge/valley curve on one triangle face.
 // v0,v1,v2 are the indices of the 3 vertices; this function assumes that the
 // curve connects points on the edges v0-v1 and v1-v2
 // (or connects point on v0-v1 to center if to_center is true)
-void draw_segment_app_ridge(const trimesh::TriMesh* mesh, int v0, int v1,
-                            int v2, float emax0, float emax1, float emax2,
-                            float kmax0, float kmax1, float kmax2,
-                            const vec& tmax0, const vec& tmax1,
-                            const vec& tmax2, float thresh, bool to_center,
-                            bool do_test)
+void
+draw_segment_app_ridge(const trimesh::TriMesh* mesh, int v0, int v1, int v2,
+                       float emax0, float emax1, float emax2, float kmax0,
+                       float kmax1, float kmax2, const vec& tmax0,
+                       const vec& tmax1, const vec& tmax2, float thresh,
+                       bool to_center, bool do_test)
 {
     // Interpolate to find ridge/valley line segment endpoints
     // in this triangle and the curvatures there
@@ -213,10 +223,11 @@ void draw_segment_app_ridge(const trimesh::TriMesh* mesh, int v0, int v1,
 }
 
 // Draw apparent ridges in a triangle
-void draw_face_app_ridges(const trimesh::TriMesh* mesh, int v0, int v1, int v2,
-                          const vector<float>& ndotv, const vector<float>& q1,
-                          const vector<vec2>& t1, const vector<float>& Dt1q1,
-                          bool do_bfcull, bool do_test, float thresh)
+void
+draw_face_app_ridges(const trimesh::TriMesh* mesh, int v0, int v1, int v2,
+                     const vector<float>& ndotv, const vector<float>& q1,
+                     const vector<vec2>& t1, const vector<float>& Dt1q1,
+                     bool do_bfcull, bool do_test, float thresh)
 {
 #if 0
 	// Backface culling is turned off: getting contours from the
@@ -291,10 +302,11 @@ void draw_face_app_ridges(const trimesh::TriMesh* mesh, int v0, int v1, int v2,
 }
 
 // Draw apparent ridges of the mesh
-void draw_mesh_app_ridges(const trimesh::TriMesh* mesh, vector<float>& ndotv,
-                          const vector<float>& q1, const vector<vec2>& t1,
-                          const vector<float>& Dt1q1, bool do_bfcull,
-                          bool do_test, float thresh)
+void
+draw_mesh_app_ridges(const trimesh::TriMesh* mesh, vector<float>& ndotv,
+                     const vector<float>& q1, const vector<vec2>& t1,
+                     const vector<float>& Dt1q1, bool do_bfcull, bool do_test,
+                     float thresh)
 {
     const int* t        = &mesh->tstrips[0];
     const int* stripend = t;

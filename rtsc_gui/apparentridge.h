@@ -23,9 +23,10 @@ void compute_viewdep_curv(const trimesh::TriMesh* mesh, int i, float ndotv,
 
 // Compute D_{t_1} q_1 - the derivative of max view-dependent curvature
 // in the principal max view-dependent curvature direction.
-void compute_Dt1q1(const trimesh::TriMesh* mesh, int i, float ndotv,
-                   const std::vector<float>&         q1,
-                   const std::vector<trimesh::vec2>& t1, float& Dt1q1);
+std::vector<float> compute_Dt1q1(const trimesh::TriMesh*           mesh,
+                                 const std::vector<float>          ndotv,
+                                 const std::vector<float>&         q1,
+                                 const std::vector<trimesh::vec2>& t1);
 
 // Draw apparent ridges of the mesh
 void draw_mesh_app_ridges(const trimesh::TriMesh*           mesh,

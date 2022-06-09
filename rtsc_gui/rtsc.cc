@@ -11,6 +11,7 @@ rtsc.cc
 Real-time suggestive contours - these days, it also draws many other lines.
 */
 
+#include "rtsc.h"
 #include "GL/glui.h"
 #include "GL/glut.h"
 #include "GLCamera.h"
@@ -18,7 +19,6 @@ Real-time suggestive contours - these days, it also draws many other lines.
 #include "TriMesh_algo.h"
 #include "XForm.h"
 #include "apparentridge.h"
-#include "rtsc.h"
 #include "timestamp.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -40,7 +40,7 @@ trimesh::GLCamera camera{}, camera_alt{};
 trimesh::xform    xf{}, xf_alt{};
 float             fov = 0.7f;
 double            alt_projmatrix[16]{};
-std::string             xffilename{}; // Filename where we look for "home" position
+std::string       xffilename{}; // Filename where we look for "home" position
 trimesh::point    viewpos{};    // Current view position
 trimesh::TriMesh* glut_mesh = nullptr;
 
@@ -106,7 +106,8 @@ float        currsmooth;   // Used in smoothing
 trimesh::vec currcolor;    // Current line color
 
 // Draw triangle strips.  They are stored as length followed by values.
-void draw_tstrips(trimesh::TriMesh* mesh)
+void
+draw_tstrips(trimesh::TriMesh* mesh)
 {
     const int* t   = &mesh->tstrips[0];
     const int* end = t + mesh->tstrips.size();
@@ -119,7 +120,8 @@ void draw_tstrips(trimesh::TriMesh* mesh)
 }
 
 // Create a texture with a black line of the given width.
-void make_texture(float width)
+void
+make_texture(float width)
 {
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     int                   texsize  = 1024;
@@ -156,11 +158,10 @@ void make_texture(float width)
 }
 
 // Draw contours and suggestive contours using texture mapping
-void draw_c_sc_texture(const std::vector<float>& ndotv,
-                       const std::vector<float>& kr,
-                       const std::vector<float>& sctest_num,
-                       const std::vector<float>& sctest_den,
-                       trimesh::TriMesh* mesh)
+void
+draw_c_sc_texture(const std::vector<float>& ndotv, const std::vector<float>& kr,
+                  const std::vector<float>& sctest_num,
+                  const std::vector<float>& sctest_den, trimesh::TriMesh* mesh)
 {
     glEnableClientState(GL_VERTEX_ARRAY);
     glVertexPointer(3, GL_FLOAT, 0, &mesh->vertices[0][0]);
@@ -249,7 +250,8 @@ void draw_c_sc_texture(const std::vector<float>& ndotv,
 }
 
 // Color the mesh by curvatures
-void compute_curv_colors(trimesh::TriMesh* mesh)
+void
+compute_curv_colors(trimesh::TriMesh* mesh)
 {
     float cscale = trimesh::sqr(8.0f * feature_size);
 
@@ -266,7 +268,8 @@ void compute_curv_colors(trimesh::TriMesh* mesh)
 }
 
 // Similar, but grayscale mapping of mean curvature H
-void compute_gcurv_colors(trimesh::TriMesh* mesh)
+void
+compute_gcurv_colors(trimesh::TriMesh* mesh)
 {
     float cscale = 10.0f * feature_size;
 
@@ -286,7 +289,8 @@ void compute_gcurv_colors(trimesh::TriMesh* mesh)
 // These are indexed by (n dot l), though they are actually 2D textures
 // with a height of 1 because some hardware (cough, cough, ATI) is
 // thoroughly broken for 1D textures...
-void make_light_textures(GLuint* texture_contexts)
+void
+make_light_textures(GLuint* texture_contexts)
 {
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     const int     texsize = 256;
@@ -363,7 +367,8 @@ void make_light_textures(GLuint* texture_contexts)
 }
 
 // Draw the basic mesh, which we'll overlay with lines
-void draw_base_mesh(trimesh::TriMesh* mesh)
+void
+draw_base_mesh(trimesh::TriMesh* mesh)
 {
     int nv = mesh->vertices.size();
 
@@ -426,7 +431,7 @@ void draw_base_mesh(trimesh::TriMesh* mesh)
         glLoadIdentity();
         glTranslatef(0.5, 0.5, 0); // Remap [-0.5 .. 0.5] -> [0 .. 1]
         glScalef(0.496, 0, 0);     // Remap [-1 .. 1] -> (-0.5 .. 0.5)
-        if constexpr (use_3dtexc)            // Rotate normals, else see below
+        if constexpr (use_3dtexc)  // Rotate normals, else see below
         {
             float rotamount =
                 180.0f / M_PI * acos(lightdir DOT trimesh::vec(1, 0, 0));
@@ -511,8 +516,7 @@ void draw_base_mesh(trimesh::TriMesh* mesh)
         for (int i = 0; i < nv; i++)
         {
             glVertex3fv(mesh->vertices[i]);
-            glVertex3fv(mesh->vertices[i] +
-                        2.0f * line_len * mesh->normals[i]);
+            glVertex3fv(mesh->vertices[i] + 2.0f * line_len * mesh->normals[i]);
         }
         glEnd();
         glPointSize(3);
@@ -599,82 +603,62 @@ void draw_base_mesh(trimesh::TriMesh* mesh)
     glDisableClientState(GL_VERTEX_ARRAY);
 }
 
-// Compute per-vertex n dot l, n dot v, radial curvature, and
-// derivative of curvature for the current view
-void compute_perview(std::vector<float>& ndotv, std::vector<float>& kr,
-                     std::vector<float>& sctest_num,
-                     std::vector<float>& sctest_den,
-                     std::vector<float>& shtest_num, std::vector<float>& q1,
-                     std::vector<trimesh::vec2>& t1, std::vector<float>& Dt1q1,
-                     bool extra_sin2theta,
-                     trimesh::TriMesh* mesh)
+std::vector<float>
+compute_ndotv(const trimesh::TriMesh& mesh, trimesh::point3 view_pos)
 {
-    if (!mesh)
-        return;
-
-    if (draw_apparent)
-        mesh->need_adjacentfaces();
-
-    int nv = mesh->vertices.size();
-
-    float scthresh  = sug_thresh / trimesh::sqr(feature_size);
-    float shthresh  = sh_thresh / trimesh::sqr(feature_size);
-    bool  need_DwKr = (draw_sc || draw_sh || draw_DwKr);
-
-    ndotv.resize(nv);
-    kr.resize(nv);
-    if (draw_apparent)
+    const int          nv = mesh.vertices.size();
+    std::vector<float> ndotv{};
+    ndotv.reserve(nv);
+    for (int i = 0; i < nv; ++i)
     {
-        q1.resize(nv);
-        t1.resize(nv);
-        Dt1q1.resize(nv);
+        trimesh::vec viewdir = trimesh::normalized(view_pos - mesh.vertices[i]);
+        ndotv.emplace_back(viewdir DOT mesh.normals[i]);
     }
-    if (need_DwKr)
-    {
-        sctest_num.resize(nv);
-        sctest_den.resize(nv);
-        if (draw_sh)
-            shtest_num.resize(nv);
-    }
+    return ndotv;
+}
 
-    // Compute quantities at each vertex
-#pragma omp parallel for
-    for (int i = 0; i < nv; i++)
+std::vector<float>
+compute_kr(const trimesh::TriMesh& mesh, trimesh::point3 view_pos)
+{
+    const int          nv = mesh.vertices.size();
+    std::vector<float> kr{};
+    kr.reserve(nv);
+    for (int i = 0; i < nv; ++i)
     {
-        // Compute n DOT v
-        trimesh::vec viewdir = viewpos - mesh->vertices[i];
-        float        rlv     = 1.0f / trimesh::len(viewdir);
-        viewdir *= rlv;
-        ndotv[i] = viewdir DOT mesh->normals[i];
-
-        float u = viewdir DOT mesh->pdir1[i], u2 = u * u;
-        float v = viewdir DOT mesh->pdir2[i], v2 = v * v;
+        trimesh::vec viewdir = trimesh::normalized(view_pos - mesh.vertices[i]);
+        float u = viewdir DOT mesh.pdir1[i], u2 = u * u;
+        float v = viewdir DOT mesh.pdir2[i], v2 = v * v;
 
         // Note:  this is actually Kr * sin^2 theta
-        kr[i] = mesh->curv1[i] * u2 + mesh->curv2[i] * v2;
+        kr.emplace_back(mesh.curv1[i] * u2 + mesh.curv2[i] * v2);
+    }
+    return kr;
+}
 
-        if (draw_apparent)
-        {
-            float csc2theta = 1.0f / (u2 + v2);
-            compute_viewdep_curv(mesh, i, ndotv[i], u2 * csc2theta,
-                                 u * v * csc2theta, v2 * csc2theta, q1[i],
-                                 t1[i]);
-        }
-        if (!need_DwKr)
-            continue;
+std::pair<std::vector<float>, std::vector<float>>
+compute_schtest(const trimesh::TriMesh&   mesh,
+                const std::vector<float>& sctest_den, trimesh::point3 view_pos,
+                float scthresh, float shthresh, bool extra_sin2theta)
+{
+    const int          nv = mesh.vertices.size();
+    std::vector<float> sctest_num(nv);
+    std::vector<float> shtest_num(nv);
+    for (int i = 0; i < nv; ++i)
+    {
+        trimesh::vec viewdir = trimesh::normalized(view_pos - mesh.vertices[i]);
+        float u = viewdir DOT mesh.pdir1[i], u2 = u * u;
+        float v = viewdir DOT mesh.pdir2[i], v2 = v * v;
 
         // Use DwKr * sin(theta) / cos(theta) for cutoff test
         sctest_num[i] =
-            u2 * (u * mesh->dcurv[i][0] + 3.0f * v * mesh->dcurv[i][1]) +
-            v2 * (3.0f * u * mesh->dcurv[i][2] + v * mesh->dcurv[i][3]);
+            u2 * (u * mesh.dcurv[i][0] + 3.0f * v * mesh.dcurv[i][1]) +
+            v2 * (3.0f * u * mesh.dcurv[i][2] + v * mesh.dcurv[i][3]);
         float csc2theta = 1.0f / (u2 + v2);
         sctest_num[i] *= csc2theta;
-        float tr = (mesh->curv2[i] - mesh->curv1[i]) * u * v * csc2theta;
-        sctest_num[i] -= 2.0f * ndotv[i] * trimesh::sqr(tr);
+        float tr = (mesh.curv2[i] - mesh.curv1[i]) * u * v * csc2theta;
+        sctest_num[i] -= 2.0f * sctest_den[i] * trimesh::sqr(tr);
         if (extra_sin2theta)
             sctest_num[i] *= u2 + v2;
-
-        sctest_den[i] = ndotv[i];
 
         if (draw_sh)
         {
@@ -682,12 +666,63 @@ void compute_perview(std::vector<float>& ndotv, std::vector<float>& kr,
             shtest_num[i] -= shthresh * sctest_den[i];
         }
         sctest_num[i] -= scthresh * sctest_den[i];
+        // Note:  this is actually Kr * sin^2 theta
+        sctest_num.emplace_back(mesh.curv1[i] * u2 + mesh.curv2[i] * v2);
+    }
+    return {std::move(sctest_num), std::move(shtest_num)};
+}
+
+std::pair<std::vector<float>, std::vector<trimesh::vec2>>
+compute_q1t1(const trimesh::TriMesh& mesh, trimesh::point view_pos,
+             const std::vector<float>& ndotv)
+{
+    const int                  nv = mesh.vertices.size();
+    std::vector<float>         q1(nv);
+    std::vector<trimesh::vec2> t1(nv);
+    for (int i = 0; i < nv; ++i)
+    {
+        trimesh::vec viewdir = trimesh::normalized(view_pos - mesh.vertices[i]);
+        float u = viewdir DOT mesh.pdir1[i], u2 = u * u;
+        float v = viewdir DOT mesh.pdir2[i], v2 = v * v;
+
+        float csc2theta = 1.0f / (u2 + v2);
+        compute_viewdep_curv(&mesh, i, ndotv[i], u2 * csc2theta,
+                             u * v * csc2theta, v2 * csc2theta, q1[i], t1[i]);
+    }
+    return {std::move(q1), std::move(t1)};
+}
+
+// Compute per-vertex n dot l, n dot v, radial curvature, and
+// derivative of curvature for the current view
+void
+compute_perview(std::vector<float>& ndotv, std::vector<float>& kr,
+                std::vector<float>& sctest_num, std::vector<float>& sctest_den,
+                std::vector<float>& shtest_num, std::vector<float>& q1,
+                std::vector<trimesh::vec2>& t1, std::vector<float>& Dt1q1,
+                bool extra_sin2theta, trimesh::TriMesh* mesh)
+{
+    if (!mesh)
+        return;
+
+    const int  nv        = mesh->vertices.size();
+    const bool need_DwKr = (draw_sc || draw_sh || draw_DwKr);
+
+    ndotv = compute_ndotv(*mesh, viewpos);
+    kr    = compute_kr(*mesh, viewpos);
+
+    if (need_DwKr)
+    {
+        sctest_den           = ndotv;
+        const float scthresh = sug_thresh / trimesh::sqr(feature_size);
+        const float shthresh = sh_thresh / trimesh::sqr(feature_size);
+        std::tie(sctest_num, shtest_num) = compute_schtest(
+            *mesh, sctest_den, viewpos, scthresh, shthresh, extra_sin2theta);
     }
     if (draw_apparent)
     {
-#pragma omp parallel for
-        for (int i = 0; i < nv; i++)
-            compute_Dt1q1(mesh, i, ndotv[i], q1, t1, Dt1q1[i]);
+        mesh->need_adjacentfaces();
+        std::tie(q1, t1) = compute_q1t1(*mesh, viewpos, ndotv);
+        Dt1q1            = compute_Dt1q1(mesh, ndotv, q1, t1);
     }
 }
 
@@ -695,26 +730,24 @@ void compute_perview(std::vector<float>& ndotv, std::vector<float>& kr,
 // are the indices of the 3 vertices; this function assumes that the
 // curve connects points on the edges v0-v1 and v1-v2
 // (or connects point on v0-v1 to center if to_center is true)
-void draw_segment_ridge(int v0, int v1, int v2, float emax0, float emax1,
-                        float emax2, float kmax0, float kmax1, float kmax2,
-                        float thresh, bool to_center,
-                        trimesh::TriMesh* mesh)
+void
+draw_segment_ridge(int v0, int v1, int v2, float emax0, float emax1,
+                   float emax2, float kmax0, float kmax1, float kmax2,
+                   float thresh, bool to_center, trimesh::TriMesh* mesh)
 {
     // Interpolate to find ridge/valley line segment endpoints
     // in this triangle and the curvatures there
     float          w10 = fabs(emax0) / (fabs(emax0) + fabs(emax1));
     float          w01 = 1.0f - w10;
-    trimesh::point p01 =
-        w01 * mesh->vertices[v0] + w10 * mesh->vertices[v1];
-    float k01 = fabs(w01 * kmax0 + w10 * kmax1);
+    trimesh::point p01 = w01 * mesh->vertices[v0] + w10 * mesh->vertices[v1];
+    float          k01 = fabs(w01 * kmax0 + w10 * kmax1);
 
     trimesh::point p12;
     float          k12;
     if (to_center)
     {
         // Connect first point to center of triangle
-        p12 = (mesh->vertices[v0] + mesh->vertices[v1] +
-               mesh->vertices[v2]) /
+        p12 = (mesh->vertices[v0] + mesh->vertices[v1] + mesh->vertices[v2]) /
               3.0f;
         k12 = fabs(kmax0 + kmax1 + kmax2) / 3.0f;
     }
@@ -764,10 +797,10 @@ void draw_segment_ridge(int v0, int v1, int v2, float emax0, float emax1,
 // Note: this computes ridges/valleys every time, instead of once at the
 //   start (given they aren't view dependent, this is wasteful)
 // Algorithm based on formulas of Ohtake et al., 2004.
-void draw_face_ridges(int v0, int v1, int v2, bool do_ridge,
-                      const std::vector<float>& ndotv, bool do_bfcull,
-                      bool do_test, float thresh,
-                      trimesh::TriMesh* mesh)
+void
+draw_face_ridges(int v0, int v1, int v2, bool do_ridge,
+                 const std::vector<float>& ndotv, bool do_bfcull, bool do_test,
+                 float thresh, trimesh::TriMesh* mesh)
 {
     // Backface culling
     if (do_bfcull && ndotv[v0] <= 0.0f && ndotv[v1] <= 0.0f &&
@@ -814,8 +847,7 @@ void draw_face_ridges(int v0, int v1, int v2, bool do_ridge,
 
     if (do_test)
     {
-        const trimesh::point &p0 = mesh->vertices[v0],
-                             &p1 = mesh->vertices[v1],
+        const trimesh::point &p0 = mesh->vertices[v0], &p1 = mesh->vertices[v1],
                              &p2 = mesh->vertices[v2];
 
         // Check whether we have the correct flavor of extremum:
@@ -863,8 +895,9 @@ void draw_face_ridges(int v0, int v1, int v2, bool do_ridge,
 }
 
 // Draw the ridges (valleys) of the mesh
-void draw_mesh_ridges(bool do_ridge, const std::vector<float>& ndotv,
-                      bool do_bfcull, bool do_test, float thresh,trimesh::TriMesh* mesh)
+void
+draw_mesh_ridges(bool do_ridge, const std::vector<float>& ndotv, bool do_bfcull,
+                 bool do_test, float thresh, trimesh::TriMesh* mesh)
 {
     const int* t        = &mesh->tstrips[0];
     const int* stripend = t;
@@ -892,9 +925,10 @@ void draw_mesh_ridges(bool do_ridge, const std::vector<float>& ndotv,
 }
 
 // Draw principal highlights on a face
-void draw_face_ph(int v0, int v1, int v2, bool do_ridge,
-                  const std::vector<float>& ndotv, bool do_bfcull, bool do_test,
-                  float thresh,trimesh::TriMesh* mesh)
+void
+draw_face_ph(int v0, int v1, int v2, bool do_ridge,
+             const std::vector<float>& ndotv, bool do_bfcull, bool do_test,
+             float thresh, trimesh::TriMesh* mesh)
 {
     // Backface culling
     if (likely(do_bfcull && ndotv[v0] <= 0.0f && ndotv[v1] <= 0.0f &&
@@ -910,9 +944,9 @@ void draw_face_ph(int v0, int v1, int v2, bool do_ridge,
     if (do_test && !do_ridge && std::max(std::max(k0, k1), k2) > 0.0f)
         return;
 
-    trimesh::vec d0   = mesh->pdir1[v0];
-    trimesh::vec d1   = mesh->pdir1[v1];
-    trimesh::vec d2   = mesh->pdir1[v2];
+    trimesh::vec d0 = mesh->pdir1[v0];
+    trimesh::vec d1 = mesh->pdir1[v1];
+    trimesh::vec d2 = mesh->pdir1[v2];
 
     // dref is the e1 vector with the largest |k1|
     trimesh::vec dref = d0;
@@ -984,8 +1018,9 @@ void draw_face_ph(int v0, int v1, int v2, bool do_ridge,
 }
 
 // Draw principal highlights
-void draw_mesh_ph(bool do_ridge, const std::vector<float>& ndotv,
-                  bool do_bfcull, bool do_test, float thresh,trimesh::TriMesh* mesh)
+void
+draw_mesh_ph(bool do_ridge, const std::vector<float>& ndotv, bool do_bfcull,
+             bool do_test, float thresh, trimesh::TriMesh* mesh)
 {
     const int* t        = &mesh->tstrips[0];
     const int* stripend = t;
@@ -1012,11 +1047,11 @@ void draw_mesh_ph(bool do_ridge, const std::vector<float>& ndotv,
     }
 }
 
-void draw_isolines(const isoline_params& params, trimesh::TriMesh* mesh,
-                   const trimesh::point& viewpos, const trimesh::vec& currcolor)
+void
+draw_isolines(const isoline_params& params, trimesh::TriMesh* mesh,
+              const trimesh::point& viewpos, const trimesh::vec& currcolor)
 {
-    auto [points, colors] =
-        compute_isolines(params, mesh, viewpos, currcolor);
+    auto [points, colors] = compute_isolines(params, mesh, viewpos, currcolor);
     for (auto i = 0; i < points.size(); ++i)
     {
         glColor4fv(colors[i].data());
@@ -1027,7 +1062,8 @@ void draw_isolines(const isoline_params& params, trimesh::TriMesh* mesh,
 // Draw exterior silhouette of the mesh: this just draws
 // thick contours, which are partially hidden by the mesh.
 // Note: this needs to happen *before* draw_base_mesh...
-void draw_silhouette(const std::vector<float>& ndotv, trimesh::TriMesh* mesh)
+void
+draw_silhouette(const std::vector<float>& ndotv, trimesh::TriMesh* mesh)
 {
     glDepthMask(GL_FALSE);
 
@@ -1054,7 +1090,8 @@ void draw_silhouette(const std::vector<float>& ndotv, trimesh::TriMesh* mesh)
 }
 
 // Draw the boundaries on the mesh
-void draw_boundaries(bool do_hidden, trimesh::TriMesh* mesh)
+void
+draw_boundaries(bool do_hidden, trimesh::TriMesh* mesh)
 {
     mesh->need_faces();
     mesh->need_across_edge();
@@ -1085,7 +1122,8 @@ void draw_boundaries(bool do_hidden, trimesh::TriMesh* mesh)
 }
 
 // Draw lines of n.l = const.
-void draw_isophotes(const std::vector<float>& ndotv, trimesh::TriMesh* mesh)
+void
+draw_isophotes(const std::vector<float>& ndotv, trimesh::TriMesh* mesh)
 {
     // Light direction
     trimesh::vec lightdir(&lightdir_matrix[8]);
@@ -1146,7 +1184,8 @@ void draw_isophotes(const std::vector<float>& ndotv, trimesh::TriMesh* mesh)
 }
 
 // Draw lines of constant depth
-void draw_topolines(const std::vector<float>& ndotv, trimesh::TriMesh* mesh)
+void
+draw_topolines(const std::vector<float>& ndotv, trimesh::TriMesh* mesh)
 {
     // Camera direction and scale
     trimesh::vec camdir(xf[2], xf[6], xf[10]);
@@ -1159,10 +1198,9 @@ void draw_topolines(const std::vector<float>& ndotv, trimesh::TriMesh* mesh)
     depth.resize(nv);
     for (int i = 0; i < nv; i++)
     {
-        depth[i] =
-            ((mesh->vertices[i] - mesh->bsphere.center) DOT camdir) *
-                depth_scale +
-            depth_offset;
+        depth[i] = ((mesh->vertices[i] - mesh->bsphere.center) DOT camdir) *
+                       depth_scale +
+                   depth_offset;
     }
 
     // Draw the topo lines
@@ -1180,8 +1218,9 @@ void draw_topolines(const std::vector<float>& ndotv, trimesh::TriMesh* mesh)
 }
 
 // Draw K=0, H=0, and DwKr=thresh lines
-void draw_misc(const std::vector<float>& ndotv, const std::vector<float>& DwKr,
-               bool do_hidden, trimesh::TriMesh* mesh)
+void
+draw_misc(const std::vector<float>& ndotv, const std::vector<float>& DwKr,
+          bool do_hidden, trimesh::TriMesh* mesh)
 {
     if (do_hidden)
     {
@@ -1201,8 +1240,8 @@ void draw_misc(const std::vector<float>& ndotv, const std::vector<float>& DwKr,
         for (int i = 0; i < nv; i++)
             K[i] = mesh->curv1[i] * mesh->curv2[i];
         glBegin(GL_LINES);
-        draw_isolines({.val{K}, .ndotv{ndotv}, .do_bfcull = !do_hidden},
-                      mesh, viewpos, currcolor);
+        draw_isolines({.val{K}, .ndotv{ndotv}, .do_bfcull = !do_hidden}, mesh,
+                      viewpos, currcolor);
         glEnd();
     }
     if (draw_H)
@@ -1211,8 +1250,8 @@ void draw_misc(const std::vector<float>& ndotv, const std::vector<float>& DwKr,
         for (int i = 0; i < nv; i++)
             H[i] = 0.5f * (mesh->curv1[i] + mesh->curv2[i]);
         glBegin(GL_LINES);
-        draw_isolines({.val{H}, .ndotv{ndotv}, .do_bfcull = !do_hidden},
-                      mesh, viewpos, currcolor);
+        draw_isolines({.val{H}, .ndotv{ndotv}, .do_bfcull = !do_hidden}, mesh,
+                      viewpos, currcolor);
         glEnd();
     }
     if (draw_DwKr)
@@ -1225,7 +1264,8 @@ void draw_misc(const std::vector<float>& ndotv, const std::vector<float>& DwKr,
 }
 
 // Draw the mesh, possibly including a bunch of lines
-void draw_mesh(trimesh::TriMesh* mesh)
+void
+draw_mesh(trimesh::TriMesh* mesh)
 {
     // These are static so the memory isn't reallocated on every frame
     static std::vector<float>         ndotv, kr;
@@ -1417,15 +1457,16 @@ void draw_mesh(trimesh::TriMesh* mesh)
     }
 
     // Ridges and valleys
-    currcolor    = trimesh::vec(0.0, 0.0, 0.0);
-    
+    currcolor = trimesh::vec(0.0, 0.0, 0.0);
+
     if (draw_ridges)
     {
         if (draw_colors)
             currcolor = trimesh::vec(0.3, 0.0, 0.3);
         glLineWidth(2);
         glBegin(GL_LINES);
-        draw_mesh_ridges(true, ndotv, true, test_rv, rv_thresh / feature_size, mesh);
+        draw_mesh_ridges(true, ndotv, true, test_rv, rv_thresh / feature_size,
+                         mesh);
         glEnd();
     }
     if (draw_valleys)
@@ -1434,7 +1475,8 @@ void draw_mesh(trimesh::TriMesh* mesh)
             currcolor = trimesh::vec(0.5, 0.3, 0.2);
         glLineWidth(2);
         glBegin(GL_LINES);
-        draw_mesh_ridges(false, ndotv, true, test_rv, rv_thresh / feature_size, mesh);
+        draw_mesh_ridges(false, ndotv, true, test_rv, rv_thresh / feature_size,
+                         mesh);
         glEnd();
     }
 
@@ -1541,13 +1583,15 @@ void draw_mesh(trimesh::TriMesh* mesh)
 }
 
 // Signal a redraw
-void need_redraw()
+void
+need_redraw()
 {
     glutPostRedisplay();
 }
 
 // Clear the screen and reset OpenGL modes to something sane
-void cls()
+void
+cls()
 {
     glDisable(GL_DITHER);
     glDisable(GL_BLEND);
@@ -1565,7 +1609,8 @@ void cls()
 // Set up viewport and scissoring for the subwindow, and optionally draw
 // a box around it (actually, just clears a rectangle one pixel bigger
 // to black).  Assumes current viewport is set up for the whole window.
-void set_subwindow_viewport(bool draw_box = false)
+void
+set_subwindow_viewport(bool draw_box = false)
 {
     GLint V[4];
     glGetIntegerv(GL_VIEWPORT, V);
@@ -1590,7 +1635,8 @@ void set_subwindow_viewport(bool draw_box = false)
 }
 
 // Draw the scene
-void redraw()
+void
+redraw()
 {
     using namespace trimesh;
 
@@ -1652,7 +1698,8 @@ void redraw()
 }
 
 // Set the view to look at the middle of the mesh, from reasonably far away
-void resetview()
+void
+resetview()
 {
     camera.stopspin();
     camera_alt.stopspin();
@@ -1668,7 +1715,8 @@ void resetview()
 }
 
 // Smooth the mesh
-void filter_mesh(int dummy = 0)
+void
+filter_mesh(int dummy = 0)
 {
     printf("\r");
     fflush(stdout);
@@ -1691,7 +1739,8 @@ void filter_mesh(int dummy = 0)
 }
 
 // Diffuse the normals across the mesh
-void filter_normals(int dummy = 0)
+void
+filter_normals(int dummy = 0)
 {
     printf("\r");
     fflush(stdout);
@@ -1706,7 +1755,8 @@ void filter_normals(int dummy = 0)
 }
 
 // Diffuse the curvatures across the mesh
-void filter_curv(int dummy = 0)
+void
+filter_curv(int dummy = 0)
 {
     printf("\r");
     fflush(stdout);
@@ -1719,7 +1769,8 @@ void filter_curv(int dummy = 0)
 }
 
 // Diffuse the curvature derivatives across the mesh
-void filter_dcurv(int dummy = 0)
+void
+filter_dcurv(int dummy = 0)
 {
     printf("\r");
     fflush(stdout);
@@ -1730,7 +1781,8 @@ void filter_dcurv(int dummy = 0)
 }
 
 // Perform an iteration of subdivision
-void subdivide_mesh(int dummy = 0)
+void
+subdivide_mesh(int dummy = 0)
 {
     printf("\r");
     fflush(stdout);
@@ -1750,7 +1802,8 @@ void subdivide_mesh(int dummy = 0)
 }
 
 // Save the current image to a PPM file
-void dump_image(int dummy = 0)
+void
+dump_image(int dummy = 0)
 {
     // Find first non-used filename
     const char filenamepattern[] = "img%d.ppm";
@@ -1800,7 +1853,8 @@ void dump_image(int dummy = 0)
 
 // Compute a "feature size" for the mesh: computed as 1% of
 // the reciprocal of the 10-th percentile curvature
-void compute_feature_size()
+void
+compute_feature_size()
 {
     int nv    = glut_mesh->curv1.size();
     int nsamp = std::min(nv, 500);
@@ -1834,7 +1888,8 @@ void compute_feature_size()
 static unsigned       buttonstate  = 0;
 static const unsigned ctrl_pressed = 1 << 30;
 
-void mousemotionfunc(int x, int y)
+void
+mousemotionfunc(int x, int y)
 {
     // Ctrl+mouse = relight
     if (buttonstate & ctrl_pressed)
@@ -1879,15 +1934,16 @@ void mousemotionfunc(int x, int y)
     }
     else
     {
-        camera.mouse(x, y, b, xf * glut_mesh->bsphere.center, glut_mesh->bsphere.r,
-                     xf);
+        camera.mouse(x, y, b, xf * glut_mesh->bsphere.center,
+                     glut_mesh->bsphere.r, xf);
     }
 
     need_redraw();
     GLUI_Master.sync_live_all();
 }
 
-void mousebuttonfunc(int button, int state, int x, int y)
+void
+mousebuttonfunc(int button, int state, int x, int y)
 {
     if (state == GLUT_DOWN)
         buttonstate |= (1 << button);
@@ -1918,7 +1974,8 @@ void mousebuttonfunc(int button, int state, int x, int y)
 #define Ctrl (1 - 'a')
 
 // Keyboard callback
-void keyboardfunc(unsigned char key, int x, int y)
+void
+keyboardfunc(unsigned char key, int x, int y)
 {
     switch (key)
     {
@@ -2087,7 +2144,8 @@ void keyboardfunc(unsigned char key, int x, int y)
     GLUI_Master.sync_live_all();
 }
 
-void skeyboardfunc(int key, int x, int y)
+void
+skeyboardfunc(int key, int x, int y)
 {
     switch (key)
     {
@@ -2111,7 +2169,8 @@ void skeyboardfunc(int key, int x, int y)
 
 // Reshape the window.  We clear the window here to possibly avoid some
 // weird problems.  Yuck.
-void reshape(int x, int y)
+void
+reshape(int x, int y)
 {
     GLUI_Master.auto_set_viewport();
     cls();
@@ -2119,13 +2178,15 @@ void reshape(int x, int y)
     need_redraw();
 }
 
-void usage(const char* myname)
+void
+usage(const char* myname)
 {
     fprintf(stderr, "Usage: %s [-options] infile\n", myname);
     exit(1);
 }
 
-int main(int argc, char* argv[])
+int
+main(int argc, char* argv[])
 {
     int wwid = 820, wht = 700;
     for (int j = 1; j < argc; j++)
